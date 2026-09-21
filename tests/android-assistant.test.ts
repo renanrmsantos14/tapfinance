@@ -25,11 +25,11 @@ test("Android manifest also exposes the compatibility ACTION_ASSIST entry point"
   assert.match(manifest, /android:name="com\.tapfinance\.assistant\.TapFinanceAssistantActivity"/);
 });
 
-test("assistant cold start targets MainActivity explicitly", () => {
+test("assistant cold start enters through the assistant activity bridge", () => {
   const activity = readFileSync(join(root, "modules/tapfinance-assistant/android/src/main/java/com/tapfinance/assistant/TapFinanceAssistantActivity.kt"), "utf8");
   const session = readFileSync(join(root, "modules/tapfinance-assistant/android/src/main/java/com/tapfinance/assistant/TapFinanceVoiceInteractionSession.kt"), "utf8");
 
   assert.match(activity, /setClassName\(packageName, "\$packageName\.MainActivity"\)/);
-  assert.match(session, /setClassName\(context\.packageName, "\$\{context\.packageName\}\.MainActivity"\)/);
+  assert.match(session, /setClassName\(context\.packageName, "com\.tapfinance\.assistant\.TapFinanceAssistantActivity"\)/);
   assert.doesNotMatch(session, /startAssistantActivity\(intent\)\s*finish\(\)/);
 });

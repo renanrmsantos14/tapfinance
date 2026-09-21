@@ -109,7 +109,7 @@ export default function TransactionDetailScreen() {
           <View style={styles.top}>
             <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
             <View style={styles.topCopy}><Text style={[styles.topTitle, { color: colors.text }]}>Editar lançamento</Text><Text style={[styles.topSubtitle, { color: colors.textMuted }]}>Ajuste os detalhes abaixo</Text></View>
-            <QuietButton accessibilityLabel="Excluir lançamento" onPress={confirmDelete}><Trash2 color={colors.negative} size={20} /></QuietButton>
+            <View style={styles.topSpacer} accessibilityElementsHidden />
           </View>
 
           <View accessibilityRole="tablist" style={[styles.typeSwitch, { backgroundColor: colors.surfaceMuted }]}>
@@ -163,6 +163,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 36 },
   top: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
   topCopy: { flex: 1, alignItems: "center" },
+  topSpacer: { width: 44, height: 44 },
   topTitle: { fontSize: 17, fontWeight: "700" },
   topSubtitle: { fontSize: 12, marginTop: 3 },
   typeSwitch: { flexDirection: "row", borderRadius: radius.md, padding: 4, marginBottom: 16 },
