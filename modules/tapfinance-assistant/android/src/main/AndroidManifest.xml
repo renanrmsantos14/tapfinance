@@ -16,5 +16,14 @@
       android:exported="true"
       android:permission="android.permission.BIND_VOICE_INTERACTION"
       android:process=":voice" />
+    <service
+      android:name="com.tapfinance.assistant.TapFinanceRecognitionService"
+      android:exported="true"
+      android:label="TapFinance">
+      <intent-filter>
+        <action android:name="android.speech.RecognitionService" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </service>
   </application>
 </manifest>
