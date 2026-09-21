@@ -1,7 +1,0 @@
-com.tapfinance.assistant.tapfinance-assistant-pngs-0 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/build/generated/res/pngs/release
-com.tapfinance.assistant.tapfinance-assistant-resValues-1 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/build/generated/res/resValues/release
-com.tapfinance.assistant.tapfinance-assistant-mergeReleaseResources-2 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
-com.tapfinance.assistant.tapfinance-assistant-mergeReleaseResources-3 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
-com.tapfinance.assistant.tapfinance-assistant-release-4 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/build/intermediates/merged_res/release/mergeReleaseResources
-com.tapfinance.assistant.tapfinance-assistant-main-5 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/src/main/res
-com.tapfinance.assistant.tapfinance-assistant-release-6 /home/renan/Documents/Projetos/App Finanças/modules/tapfinance-assistant/android/src/release/res

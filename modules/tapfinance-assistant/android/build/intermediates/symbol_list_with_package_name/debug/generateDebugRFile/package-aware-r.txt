@@ -1,2 +1,0 @@
-com.tapfinance.assistant
-xml voice_interaction_service
