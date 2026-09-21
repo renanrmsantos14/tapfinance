@@ -10,7 +10,7 @@ class TapFinanceAssistantActivity : Activity() {
     super.onCreate(savedInstanceState)
 
     val launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("tapfinance://quick-entry?assistant=1"))
-      .setPackage(packageName)
+      .setClassName(packageName, "$packageName.MainActivity")
       .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
     startActivity(launchIntent)

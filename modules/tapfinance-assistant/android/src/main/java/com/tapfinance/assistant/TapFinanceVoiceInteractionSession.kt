@@ -14,7 +14,7 @@ class TapFinanceVoiceInteractionSession(context: android.content.Context) : Voic
   override fun onShow(args: Bundle?, showFlags: Int) {
     super.onShow(args, showFlags)
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("tapfinance://quick-entry?assistant=1"))
-      .setPackage(context.packageName)
+      .setClassName(context.packageName, "${context.packageName}.MainActivity")
       .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     startAssistantActivity(intent)
     finish()

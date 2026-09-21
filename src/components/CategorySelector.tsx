@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ellipsis, type LucideIcon } from "lucide-react-native";
-import { useAppColors } from "../theme";
+import { radius, useAppColors } from "../theme";
 import type { Category } from "../types/category";
 
 const iconMap: Record<string, LucideIcon> = {
@@ -32,7 +32,7 @@ export function CategorySelector({ categories, selectedId, onSelect }: { categor
             accessibilityState={{ selected }}
             accessibilityLabel={`Categoria ${category.name}`}
             onPress={() => onSelect(category.id)}
-            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: pressed ? 0.78 : 1 }]}
+            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: pressed ? 0.74 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }]}
           >
             <Icon color={selected ? colors.accent : colors.textMuted} size={18} strokeWidth={2} />
             <Text style={[styles.text, { color: selected ? colors.accent : colors.text }]}>{category.name}</Text>
@@ -44,7 +44,7 @@ export function CategorySelector({ categories, selectedId, onSelect }: { categor
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 8, paddingVertical: 4, paddingRight: 22 },
-  item: { minHeight: 44, borderWidth: 1, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 13 },
+  content: { gap: 8, paddingVertical: 4, paddingRight: 20 },
+  item: { minHeight: 46, borderWidth: 1, borderRadius: radius.md, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14 },
   text: { fontSize: 14, fontWeight: "600" },
 });

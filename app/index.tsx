@@ -1,14 +1,14 @@
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Plus, TrendingDown, TrendingUp, WalletCards } from "lucide-react-native";
+import { useCallback, useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ArrowDownLeft, ArrowUpRight, Plus, WalletCards } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
-import { Screen, styles as ui } from "../src/components/ui";
-import { listTransactions, getMonthSummary } from "../src/repositories/transactionRepository";
+import { EmptyState, PrimaryButton, Reveal, Screen, SectionHeader, SkeletonRows } from "../src/components/ui";
+import { getMonthSummary, listTransactions } from "../src/repositories/transactionRepository";
 import type { Transaction } from "../src/types/transaction";
-import { useAppColors } from "../src/theme";
+import { radius, useAppColors } from "../src/theme";
 import { formatCentsToBRL } from "../src/utils/currency";
 import { formatMonthLabel } from "../src/utils/dates";
 
@@ -20,14 +20,22 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+  const period = useMemo(() => {
+    const now = new Date();
+    return {
+      now,
+      start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime(),
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError(false);
     try {
-      const [nextTransactions, nextSummary] = await Promise.all([listTransactions(db), getMonthSummary(db, start, end)]);
+      const [nextTransactions, nextSummary] = await Promise.all([
+        listTransactions(db),
+        getMonthSummary(db, period.start, period.end),
+      ]);
       setTransactions(nextTransactions.slice(0, 8));
       setSummary({ income: nextSummary?.income ?? 0, expense: nextSummary?.expense ?? 0 });
     } catch {
@@ -36,41 +44,63 @@ export default function HomeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [db, start, end]);
+  }, [db, period.end, period.start]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   const balance = summary.income - summary.expense;
 
   return (
-    <View style={styles.root}>
-      <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={colors.accent} />}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={colors.accent} />}
+      >
         <Screen scroll={false}>
-          <View style={styles.header}>
+          <Reveal style={styles.header}>
             <View>
-              <Text style={[styles.eyebrow, { color: colors.textMuted }]}>TAPFINANCE</Text>
-              <Text style={[styles.title, { color: colors.text }]}>Seu dinheiro, claro.</Text>
+              <Text style={[styles.eyebrow, { color: colors.accent }]}>TAPFINANCE</Text>
+              <Text style={[styles.title, { color: colors.text }]}>Visão geral</Text>
+              <Text style={[styles.subtitle, { color: colors.textMuted }]}>Seu mês, sem ruído.</Text>
             </View>
-            <View style={[styles.logo, { backgroundColor: colors.text }]}><WalletCards color={colors.background} size={20} /></View>
+            <View style={[styles.logo, { backgroundColor: colors.text }]} accessibilityElementsHidden>
+              <WalletCards color={colors.background} size={20} />
+            </View>
+          </Reveal>
+
+          <Reveal delay={45}>
+            <View style={[styles.balanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.balanceTop}>
+                <Text style={[styles.period, { color: colors.textMuted }]}>{formatMonthLabel(period.now.getTime())}</Text>
+                <Text style={[styles.periodMeta, { color: colors.textMuted }]}>{transactions.length} recentes</Text>
+              </View>
+              <Text accessibilityLabel={`Saldo do período ${formatCentsToBRL(balance)}`} style={[styles.balance, { color: colors.text }]}>{formatCentsToBRL(balance)}</Text>
+              <Text style={[styles.caption, { color: colors.textMuted }]}>saldo do período</Text>
+
+              <View style={[styles.metrics, { borderTopColor: colors.border }]}>
+                <Metric icon={<ArrowUpRight color={colors.positive} size={17} />} label="Receitas" value={formatCentsToBRL(summary.income)} color={colors.positive} />
+                <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+                <Metric icon={<ArrowDownLeft color={colors.negative} size={17} />} label="Despesas" value={formatCentsToBRL(summary.expense)} color={colors.negative} />
+              </View>
+            </View>
+          </Reveal>
+
+          <Reveal delay={85}>
+            <PrimaryButton accessibilityLabel="Criar novo lançamento" onPress={() => router.push("/quick-entry")} style={styles.cta}>
+              <Plus color={colors.background} size={19} strokeWidth={2.5} />
+              Novo lançamento
+            </PrimaryButton>
+          </Reveal>
+
+          <SectionHeader title="Movimentações recentes" actionLabel="Ver histórico" onAction={() => router.push("/transactions")} />
+          <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {loading ? <SkeletonRows count={4} /> : loadError ? (
+              <EmptyState title="Não foi possível carregar" description="Puxe a tela para baixo e tente novamente." />
+            ) : transactions.length === 0 ? (
+              <EmptyState title="Comece pelo primeiro lançamento" description="Registre uma receita ou despesa. Leva poucos segundos." actionLabel="Adicionar lançamento" onAction={() => router.push("/quick-entry")} />
+            ) : transactions.map((transaction) => (
+              <TransactionItem key={transaction.id} transaction={transaction} onPress={() => router.push(`/transaction/${transaction.id}`)} />
+            ))}
           </View>
-
-          <View style={[styles.balanceBlock, { borderBottomColor: colors.border }]}>
-            <Text style={[ui.label, { color: colors.textMuted }]}>{formatMonthLabel(now.getTime())}</Text>
-            <Text style={[styles.balance, { color: colors.text }]}>{formatCentsToBRL(balance)}</Text>
-            <Text style={[styles.caption, { color: colors.textMuted }]}>saldo do período</Text>
-          </View>
-
-          <View style={styles.metrics}>
-            <Metric icon={<TrendingUp color={colors.positive} size={18} />} label="Receitas" value={formatCentsToBRL(summary.income)} color={colors.positive} />
-            <Metric icon={<TrendingDown color={colors.negative} size={18} />} label="Despesas" value={formatCentsToBRL(summary.expense)} color={colors.negative} />
-          </View>
-
-          <Pressable accessibilityRole="button" onPress={() => router.push("/quick-entry")} style={({ pressed }) => [styles.cta, { backgroundColor: colors.text, opacity: pressed ? 0.86 : 1 }]}>
-            <Plus color={colors.background} size={20} strokeWidth={2.5} />
-            <Text style={[styles.ctaText, { color: colors.background }]}>Novo lançamento</Text>
-          </Pressable>
-
-          <View style={styles.recentHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>Recentes</Text><Pressable onPress={() => router.push("/transactions")}><Text style={[styles.link, { color: colors.accent }]}>Ver tudo</Text></Pressable></View>
-          {loading ? <ActivityIndicator color={colors.accent} style={styles.loader} /> : loadError ? <Text style={[styles.empty, { color: colors.negative }]}>Não foi possível carregar seus lançamentos. Puxe para tentar novamente.</Text> : transactions.length === 0 ? <Text style={[styles.empty, { color: colors.textMuted }]}>Seus lançamentos aparecem aqui.</Text> : transactions.map((transaction) => <TransactionItem key={transaction.id} transaction={transaction} onPress={() => router.push(`/transaction/${transaction.id}`)} />)}
         </Screen>
       </ScrollView>
       <BottomNav />
@@ -80,17 +110,34 @@ export default function HomeScreen() {
 
 function Metric({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
   const colors = useAppColors();
-  return <View style={styles.metric}><View style={styles.metricTop}>{icon}<Text style={[styles.metricLabel, { color: colors.textMuted }]}>{label}</Text></View><Text style={[styles.metricValue, { color }]}>{value}</Text></View>;
+  return (
+    <View style={styles.metric}>
+      <View style={styles.metricTop}>{icon}<Text style={[styles.metricLabel, { color: colors.textMuted }]}>{label}</Text></View>
+      <Text style={[styles.metricValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, scroll: { paddingBottom: 24 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 38 },
-  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.8, marginBottom: 9 },
-  title: { fontSize: 27, fontWeight: "700", letterSpacing: -0.7 },
-  logo: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  balanceBlock: { paddingBottom: 26, borderBottomWidth: 1 }, balance: { fontSize: 44, fontWeight: "700", letterSpacing: -1.7, marginTop: 12 }, caption: { fontSize: 13, marginTop: 4 },
-  metrics: { flexDirection: "row", gap: 34, paddingVertical: 24 }, metric: { gap: 8 }, metricTop: { flexDirection: "row", gap: 8, alignItems: "center" }, metricLabel: { fontSize: 13 }, metricValue: { fontSize: 16, fontWeight: "700" },
-  cta: { minHeight: 54, borderRadius: 6, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 38 }, ctaText: { fontSize: 16, fontWeight: "700" },
-  recentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }, sectionTitle: { fontSize: 18, fontWeight: "700" }, link: { fontSize: 13, fontWeight: "700" }, loader: { marginTop: 24 }, empty: { paddingVertical: 24, fontSize: 15 },
+  root: { flex: 1 },
+  scroll: { paddingBottom: 28 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 },
+  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.7, marginBottom: 8 },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -1.1 },
+  subtitle: { fontSize: 14, marginTop: 5 },
+  logo: { width: 42, height: 42, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  balanceCard: { borderWidth: 1, borderRadius: radius.lg, padding: 20 },
+  balanceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  period: { fontSize: 11, fontWeight: "700", letterSpacing: 1.15 },
+  periodMeta: { fontSize: 12 },
+  balance: { fontSize: 40, fontWeight: "700", letterSpacing: -1.8, marginTop: 20 },
+  caption: { fontSize: 13, marginTop: 3 },
+  metrics: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, marginTop: 22, paddingTop: 18 },
+  metric: { flex: 1, gap: 7 },
+  metricTop: { flexDirection: "row", gap: 7, alignItems: "center" },
+  metricLabel: { fontSize: 12 },
+  metricValue: { fontSize: 15, fontWeight: "700" },
+  metricDivider: { width: StyleSheet.hairlineWidth, marginHorizontal: 18 },
+  cta: { marginTop: 14, marginBottom: 28 },
+  list: { borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 16, overflow: "hidden" },
 });

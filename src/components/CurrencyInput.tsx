@@ -22,6 +22,8 @@ export function CurrencyInput({ value, onChange, autoFocus = false }: { value: n
         onChange(parsed ?? 0);
       }}
       selectTextOnFocus={false}
+      placeholder="R$ 0,00"
+      placeholderTextColor={colors.textMuted}
       textAlign="center"
       style={[styles.input, { color: colors.text }]}
       maxLength={18}
@@ -30,4 +32,4 @@ export function CurrencyInput({ value, onChange, autoFocus = false }: { value: n
   );
 }
 
-const styles = StyleSheet.create({ input: { fontSize: 42, fontWeight: "700", letterSpacing: -1.5, paddingVertical: 8 } });
+const styles = StyleSheet.create({ input: { minHeight: 68, fontSize: 42, fontWeight: "700", letterSpacing: -1.7, paddingVertical: 8 } });
