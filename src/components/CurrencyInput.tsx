@@ -32,4 +32,15 @@ export function CurrencyInput({ value, onChange, autoFocus = false }: { value: n
   );
 }
 
-const styles = StyleSheet.create({ input: { minHeight: 68, fontSize: 42, fontWeight: "700", letterSpacing: -1.7, paddingVertical: 8 } });
+const styles = StyleSheet.create({
+  input: {
+    alignSelf: "stretch",
+    minWidth: 0,
+    minHeight: 68,
+    fontSize: 42,
+    fontWeight: "700",
+    letterSpacing: -1.7,
+    paddingHorizontal: 0,
+    paddingVertical: 8,
+  },
+});
