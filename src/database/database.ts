@@ -16,7 +16,13 @@ const incomeCategories = [
   ["salario", "Salário", "briefcase-business"],
   ["reembolso", "Reembolso", "refresh-ccw"],
   ["venda", "Venda", "tag"],
+  ["outros-receita", "Outros", "ellipsis"],
 ] as const;
+
+const categorySeeds = [
+  ...expenseCategories.map(([id, name, icon], position) => ({ id, name, icon, type: "expense" as const, position })),
+  ...incomeCategories.map(([id, name, icon], position) => ({ id, name, icon, type: "income" as const, position })),
+];
 
 export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
@@ -57,21 +63,13 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 1, Date.now());
   }
 
-  const row = await db.getFirstAsync<{ count: number }>("SELECT COUNT(*) as count FROM categories");
-  if ((row?.count ?? 0) > 0) return;
-
   const now = Date.now();
   const statement = await db.prepareAsync(
-    "INSERT INTO categories (id, name, icon, type, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+    "INSERT OR IGNORE INTO categories (id, name, icon, type, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
   );
   try {
-    let position = 0;
-    for (const [id, name, icon] of expenseCategories) {
-      await statement.executeAsync(id, name, icon, "expense", position++, now);
-    }
-    position = 0;
-    for (const [id, name, icon] of incomeCategories) {
-      await statement.executeAsync(id, name, icon, "income", position++, now);
+    for (const category of categorySeeds) {
+      await statement.executeAsync(category.id, category.name, category.icon, category.type, category.position, now);
     }
   } finally {
     await statement.finalizeAsync();

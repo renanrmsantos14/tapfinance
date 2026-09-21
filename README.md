@@ -2,6 +2,13 @@
 
 Aplicativo Android-first e local-first para registrar despesas e receitas em poucos segundos. Os valores são armazenados como inteiros em centavos no SQLite; não há conta, backend, analytics ou sincronização em nuvem.
 
+## Release público
+
+- Repositório: https://github.com/renanrmsantos14/tapfinance
+- APK atual: https://github.com/renanrmsantos14/tapfinance/releases/latest/download/app-release.apk
+
+O APK de teste é assinado com a chave debug padrão do projeto. Para publicação na Play Store, configure uma keystore de produção.
+
 ## Pré-requisitos
 
 - Node.js 22 LTS ou compatível com Expo SDK 57.

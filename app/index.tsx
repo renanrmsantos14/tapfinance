@@ -19,15 +19,19 @@ export default function HomeScreen() {
   const [summary, setSummary] = useState({ income: 0, expense: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
 
   const load = useCallback(async () => {
+    setLoadError(false);
     try {
       const [nextTransactions, nextSummary] = await Promise.all([listTransactions(db), getMonthSummary(db, start, end)]);
       setTransactions(nextTransactions.slice(0, 8));
       setSummary({ income: nextSummary?.income ?? 0, expense: nextSummary?.expense ?? 0 });
+    } catch {
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -66,7 +70,7 @@ export default function HomeScreen() {
           </Pressable>
 
           <View style={styles.recentHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>Recentes</Text><Pressable onPress={() => router.push("/transactions")}><Text style={[styles.link, { color: colors.accent }]}>Ver tudo</Text></Pressable></View>
-          {loading ? <ActivityIndicator color={colors.accent} style={styles.loader} /> : transactions.length === 0 ? <Text style={[styles.empty, { color: colors.textMuted }]}>Seus lançamentos aparecem aqui.</Text> : transactions.map((transaction) => <TransactionItem key={transaction.id} transaction={transaction} onPress={() => router.push(`/transaction/${transaction.id}`)} />)}
+          {loading ? <ActivityIndicator color={colors.accent} style={styles.loader} /> : loadError ? <Text style={[styles.empty, { color: colors.negative }]}>Não foi possível carregar seus lançamentos. Puxe para tentar novamente.</Text> : transactions.length === 0 ? <Text style={[styles.empty, { color: colors.textMuted }]}>Seus lançamentos aparecem aqui.</Text> : transactions.map((transaction) => <TransactionItem key={transaction.id} transaction={transaction} onPress={() => router.push(`/transaction/${transaction.id}`)} />)}
         </Screen>
       </ScrollView>
       <BottomNav />

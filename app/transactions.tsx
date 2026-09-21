@@ -18,7 +18,9 @@ export default function TransactionsScreen() {
   const colors = useAppColors();
   const [filter, setFilter] = useState<Filter>("all");
   const [items, setItems] = useState<Transaction[]>([]);
-  useFocusEffect(useCallback(() => { void listTransactions(db, filter === "all" ? undefined : filter).then(setItems); }, [db, filter]));
+  useFocusEffect(useCallback(() => {
+    void listTransactions(db, filter === "all" ? undefined : filter).then(setItems).catch(() => Alert.alert("Não foi possível carregar", "Tente novamente."));
+  }, [db, filter]));
   return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}><View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.textMuted }]}>MOVIMENTAÇÕES</Text><Text style={[styles.title, { color: colors.text }]}>Histórico</Text></View><Pressable accessibilityRole="button" onPress={() => router.push("/quick-entry")} style={[styles.add, { backgroundColor: colors.text }]}><Plus color={colors.background} size={19} /></Pressable></View><View style={[styles.filters, { borderBottomColor: colors.border }]}>{(["all", "expense", "income"] as const).map((item) => { const active = filter === item; return <Pressable key={item} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={() => setFilter(item)} style={[styles.filter, active && { borderBottomColor: colors.accent }]}><Text style={{ color: active ? colors.accent : colors.textMuted, fontWeight: "700" }}>{item === "all" ? "Todas" : item === "expense" ? "Despesas" : "Receitas"}</Text></Pressable>; })}</View>{items.length === 0 ? <Text style={[styles.empty, { color: colors.textMuted }]}>Nenhum lançamento neste filtro.</Text> : items.map((item) => <TransactionItem key={item.id} transaction={item} onPress={() => router.push(`/transaction/${item.id}`)} />)}</Screen></ScrollView><BottomNav /></View>;
 }
 

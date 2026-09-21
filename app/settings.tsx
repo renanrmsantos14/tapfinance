@@ -14,11 +14,19 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const [assistantAvailable, setAssistantAvailable] = useState(false);
   const [assistantHeld, setAssistantHeld] = useState(false);
-  const loadRole = useCallback(async () => { setAssistantAvailable(await isAssistantRoleAvailable()); setAssistantHeld(await isAssistantRoleHeld()); }, []);
+  const loadRole = useCallback(async () => { try { setAssistantAvailable(await isAssistantRoleAvailable()); setAssistantHeld(await isAssistantRoleHeld()); } catch { setAssistantAvailable(false); setAssistantHeld(false); } }, []);
   useFocusEffect(useCallback(() => { void loadRole(); }, [loadRole]));
 
   async function activateAssistant() {
-    if (assistantAvailable) { await requestAssistantRole(); await loadRole(); return; }
+    if (assistantAvailable) {
+      try {
+        const launched = await requestAssistantRole();
+        if (!launched) { Alert.alert("Não foi possível solicitar", "Abra as configurações do assistente e escolha TapFinance manualmente."); return; }
+        Alert.alert("Quase pronto", "Conclua a seleção do TapFinance na tela oficial do Android e volte ao app.");
+        await loadRole();
+      } catch { Alert.alert("Não foi possível ativar", "Abra as configurações do assistente e escolha TapFinance manualmente."); }
+      return;
+    }
     Alert.alert("Assistente não disponível", "Este build precisa ser instalado como Development Build para expor a integração Android.", [{ text: "OK" }, { text: "Abrir configurações", onPress: () => { void openAssistantSettings(); } }]);
   }
   async function exportData() { try { const ok = await exportTransactions(db); if (!ok) Alert.alert("Compartilhamento indisponível", "Não foi possível abrir o compartilhamento neste aparelho."); } catch { Alert.alert("Não foi possível exportar", "Tente novamente."); } }
