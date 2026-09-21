@@ -15,3 +15,10 @@ test("Android Assistant metadata includes every ROLE_ASSISTANT requirement", () 
   assert.match(manifest, /android:name="com\.tapfinance\.assistant\.TapFinanceRecognitionService"/);
   assert.match(manifest, /android:name="android\.speech\.RecognitionService"/);
 });
+
+test("Android manifest also exposes the compatibility ACTION_ASSIST entry point", () => {
+  const manifest = readFileSync(join(root, "modules/tapfinance-assistant/android/src/main/AndroidManifest.xml"), "utf8");
+  assert.match(manifest, /android:name="android\.intent\.action\.ASSIST"/);
+  assert.match(manifest, /android:name="android\.intent\.category\.DEFAULT"/);
+  assert.match(manifest, /android:name="com\.tapfinance\.assistant\.TapFinanceAssistantActivity"/);
+});

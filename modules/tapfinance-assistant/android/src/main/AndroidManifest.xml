@@ -1,5 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application>
+    <activity
+      android:name="com.tapfinance.assistant.TapFinanceAssistantActivity"
+      android:exported="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter>
+        <action android:name="android.intent.action.ASSIST" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
     <service
       android:name="com.tapfinance.assistant.TapFinanceVoiceInteractionService"
       android:exported="true"
