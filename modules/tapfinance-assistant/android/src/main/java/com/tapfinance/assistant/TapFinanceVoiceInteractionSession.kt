@@ -17,6 +17,5 @@ class TapFinanceVoiceInteractionSession(context: android.content.Context) : Voic
       .setClassName(context.packageName, "${context.packageName}.MainActivity")
       .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     startAssistantActivity(intent)
-    finish()
   }
 }

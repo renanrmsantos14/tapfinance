@@ -94,11 +94,11 @@ export default function HomeScreen() {
           <SectionHeader title="Movimentações recentes" actionLabel="Ver histórico" onAction={() => router.push("/transactions")} />
           <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {loading ? <SkeletonRows count={4} /> : loadError ? (
-              <EmptyState title="Não foi possível carregar" description="Puxe a tela para baixo e tente novamente." />
+              <EmptyState embedded title="Não foi possível carregar" description="Puxe a tela para baixo e tente novamente." />
             ) : transactions.length === 0 ? (
-              <EmptyState title="Comece pelo primeiro lançamento" description="Registre uma receita ou despesa. Leva poucos segundos." actionLabel="Adicionar lançamento" onAction={() => router.push("/quick-entry")} />
-            ) : transactions.map((transaction) => (
-              <TransactionItem key={transaction.id} transaction={transaction} onPress={() => router.push(`/transaction/${transaction.id}`)} />
+              <EmptyState embedded title="Comece pelo primeiro lançamento" description="Registre uma receita ou despesa. Leva poucos segundos." actionLabel="Adicionar lançamento" onAction={() => router.push("/quick-entry")} />
+            ) : transactions.map((transaction, index) => (
+              <TransactionItem key={transaction.id} transaction={transaction} isLast={index === transactions.length - 1} onPress={() => router.push(`/transaction/${transaction.id}`)} />
             ))}
           </View>
         </Screen>

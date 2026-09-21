@@ -14,6 +14,8 @@ test("Android Assistant metadata includes every ROLE_ASSISTANT requirement", () 
   assert.match(metadata, /android:supportsAssist="true"/);
   assert.match(manifest, /android:name="com\.tapfinance\.assistant\.TapFinanceRecognitionService"/);
   assert.match(manifest, /android:name="android\.speech\.RecognitionService"/);
+  assert.match(manifest, /android:name="android\.speech"/);
+  assert.match(manifest, /android:resource="@xml\/recognition_service"/);
 });
 
 test("Android manifest also exposes the compatibility ACTION_ASSIST entry point", () => {
@@ -29,4 +31,5 @@ test("assistant cold start targets MainActivity explicitly", () => {
 
   assert.match(activity, /setClassName\(packageName, "\$packageName\.MainActivity"\)/);
   assert.match(session, /setClassName\(context\.packageName, "\$\{context\.packageName\}\.MainActivity"\)/);
+  assert.doesNotMatch(session, /startAssistantActivity\(intent\)\s*finish\(\)/);
 });

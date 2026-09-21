@@ -83,10 +83,10 @@ export function SectionHeader({ title, actionLabel, onAction }: { title: string;
   );
 }
 
-export function EmptyState({ title, description, actionLabel, onAction }: { title: string; description: string; actionLabel?: string; onAction?: () => void }) {
+export function EmptyState({ title, description, actionLabel, onAction, embedded = false }: { title: string; description: string; actionLabel?: string; onAction?: () => void; embedded?: boolean }) {
   const colors = useAppColors();
   return (
-    <View style={[styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+    <View style={embedded ? styles.emptyEmbedded : [styles.emptyCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceMuted }]}><Inbox color={colors.textMuted} size={21} /></View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.emptyDescription, { color: colors.textMuted }]}>{description}</Text>
@@ -112,6 +112,7 @@ export const styles = StyleSheet.create({
   sectionAction: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 },
   sectionActionText: { fontSize: 13, fontWeight: "700" },
   emptyCard: { borderWidth: 1, borderRadius: radius.lg, padding: 24, alignItems: "center" },
+  emptyEmbedded: { paddingHorizontal: 24, paddingVertical: 30, alignItems: "center" },
   emptyIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 14 },
   emptyTitle: { fontSize: 16, fontWeight: "700", marginBottom: 6 },
   emptyDescription: { fontSize: 14, lineHeight: 20, textAlign: "center", maxWidth: 270 },

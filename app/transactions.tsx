@@ -79,11 +79,11 @@ export default function TransactionsScreen() {
 
           <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {loading ? <SkeletonRows count={6} /> : loadError ? (
-              <EmptyState title="Histórico indisponível" description="Não foi possível carregar os lançamentos." actionLabel="Tentar novamente" onAction={() => void load()} />
+              <EmptyState embedded title="Histórico indisponível" description="Não foi possível carregar os lançamentos." actionLabel="Tentar novamente" onAction={() => void load()} />
             ) : items.length === 0 ? (
-              <EmptyState title="Nada por aqui" description="Não há lançamentos para este filtro." actionLabel="Criar lançamento" onAction={() => router.push("/quick-entry")} />
-            ) : items.map((item) => (
-              <TransactionItem key={item.id} transaction={item} onPress={() => router.push(`/transaction/${item.id}`)} />
+              <EmptyState embedded title="Nada por aqui" description="Não há lançamentos para este filtro." actionLabel="Criar lançamento" onAction={() => router.push("/quick-entry")} />
+            ) : items.map((item, index) => (
+              <TransactionItem key={item.id} transaction={item} isLast={index === items.length - 1} onPress={() => router.push(`/transaction/${item.id}`)} />
             ))}
           </View>
         </Screen>
