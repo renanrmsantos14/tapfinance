@@ -1,13 +1,23 @@
 {
   "expo": {
-    "name": "tapfinance",
+    "name": "TapFinance",
     "slug": "tapfinance",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "tapfinance",
+    "autolinking": {
+      "searchPaths": ["./modules", "./node_modules"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-sharing"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tapfinance.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,7 +26,9 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.tapfinance.app",
+      "predictiveBackGestureEnabled": true,
+      "launchMode": "singleTask"
     },
     "web": {
       "favicon": "./assets/favicon.png"
