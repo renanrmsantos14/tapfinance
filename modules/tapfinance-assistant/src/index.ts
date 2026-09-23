@@ -6,4 +6,5 @@ export type TapFinanceAssistantModule = {
   startDiagnosticTest(): boolean;
   recordQuickEntryOpened(): void;
   getDiagnosticReport(): string;
+  installUpdate(url: string, digest: string): Promise<boolean>;
 };

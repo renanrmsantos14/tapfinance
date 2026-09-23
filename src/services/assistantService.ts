@@ -8,6 +8,7 @@ type AssistantModule = {
   startDiagnosticTest: () => boolean;
   recordQuickEntryOpened: () => void;
   getDiagnosticReport: () => string;
+  installUpdate: (url: string, digest: string) => Promise<boolean>;
 };
 
 let native: AssistantModule | null = null;
@@ -20,3 +21,7 @@ export async function openAssistantSettings(): Promise<boolean> { return native?
 export function startDiagnosticTest(): boolean { return native?.startDiagnosticTest() ?? false; }
 export function recordQuickEntryOpened(): void { native?.recordQuickEntryOpened(); }
 export function getDiagnosticReport(): string { return native?.getDiagnosticReport() ?? "TapFinance: módulo nativo indisponível"; }
+export async function installUpdate(url: string, digest: string): Promise<boolean> {
+  if (!native) throw new Error("Instalação disponível somente no aplicativo Android.");
+  return native.installUpdate(url, digest);
+}

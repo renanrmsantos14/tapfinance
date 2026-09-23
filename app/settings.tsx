@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, Download, ExternalLink, Info, LockKeyhole, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
@@ -7,7 +7,8 @@ import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { Label, Reveal, Screen } from "../src/components/ui";
 import { exportTransactions } from "../src/services/exportService";
-import { getDiagnosticReport, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
+import { getDiagnosticReport, installUpdate, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
+import { checkForUpdate, type Update } from "../src/services/updateService";
 import { radius, useAppColors } from "../src/theme";
 
 export default function SettingsScreen() {
@@ -18,6 +19,7 @@ export default function SettingsScreen() {
   const [assistantAvailable, setAssistantAvailable] = useState(false);
   const [assistantHeld, setAssistantHeld] = useState(false);
   const [checkingAssistant, setCheckingAssistant] = useState(true);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const loadRole = useCallback(async () => {
     setCheckingAssistant(true);
@@ -78,6 +80,37 @@ export default function SettingsScreen() {
       await Share.share({ message: getDiagnosticReport(), title: "Diagnóstico Back Tap - TapFinance" });
     } catch {
       Alert.alert("Não foi possível compartilhar", "Tente novamente.");
+    }
+  }
+
+  async function checkUpdate() {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const update = await checkForUpdate(appVersion);
+      if (!update) {
+        Alert.alert("App atualizado", `Você já está na versão ${appVersion}.`);
+        return;
+      }
+      Alert.alert("Atualização disponível", `Versão ${update.version}. Baixar e abrir o instalador do Android?`, [
+        { text: "Agora não", style: "cancel" },
+        { text: "Atualizar", onPress: () => { void startUpdate(update); } },
+      ]);
+    } catch (error) {
+      Alert.alert("Não foi possível verificar", error instanceof Error ? error.message : "Confira a conexão e tente novamente.");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function startUpdate(update: Update) {
+    setCheckingUpdate(true);
+    try {
+      await installUpdate(update.url, update.digest);
+    } catch (error) {
+      Alert.alert("Não foi possível instalar", error instanceof Error ? error.message : "Tente novamente.");
+    } finally {
+      setCheckingUpdate(false);
     }
   }
 
@@ -154,6 +187,10 @@ export default function SettingsScreen() {
           <View style={[styles.versionCard, { borderColor: colors.border }]}>
             <Text style={[styles.versionName, { color: colors.text }]}>TapFinance</Text>
             <Text style={[styles.version, { color: colors.textMuted }]}>Versão {appVersion} · build {androidVersionCode ?? "—"}</Text>
+            {Platform.OS === "android" && <Pressable accessibilityRole="button" disabled={checkingUpdate} onPress={() => void checkUpdate()} style={({ pressed }) => [styles.updateButton, { backgroundColor: colors.accent, opacity: checkingUpdate || pressed ? 0.65 : 1 }]}>
+              <Download color="#fff" size={17} />
+              <Text style={styles.updateText}>{checkingUpdate ? "Verificando ou baixando…" : "Verificar atualização"}</Text>
+            </Pressable>}
           </View>
         </Screen>
       </ScrollView>
@@ -192,4 +229,6 @@ const styles = StyleSheet.create({
   versionCard: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 28, paddingTop: 18, alignItems: "center" },
   versionName: { fontSize: 13, fontWeight: "700" },
   version: { fontSize: 12, marginTop: 4 },
+  updateButton: { minHeight: 46, borderRadius: radius.md, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18, marginTop: 18 },
+  updateText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 });
