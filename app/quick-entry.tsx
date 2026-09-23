@@ -8,7 +8,7 @@ import { CategorySelector } from "../src/components/CategorySelector";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { Label, PrimaryButton, QuietButton, Reveal, Screen } from "../src/components/ui";
 import { listCategories } from "../src/repositories/categoryRepository";
-import { createTransaction } from "../src/repositories/transactionRepository";
+import { createTransaction, suggestCategoryFromHistory } from "../src/repositories/transactionRepository";
 import type { Category, TransactionType } from "../src/types/category";
 import { radius, useAppColors } from "../src/theme";
 import { validateTransactionDraft } from "../src/utils/validation";
@@ -26,15 +26,20 @@ export default function QuickEntryScreen() {
   const [description, setDescription] = useState("");
   const [occurredAt, setOccurredAt] = useState(Date.now());
   const [suggestionId, setSuggestionId] = useState<string | null>(null);
+  const [categorySuggested, setCategorySuggested] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const categoryTouchedRef = useRef(false);
 
   useEffect(() => {
     if (params.assistant === "1") recordQuickEntryOpened();
   }, [params.assistant]);
 
   useEffect(() => {
+    let active = true;
     setSuggestionId(null);
+    setCategorySuggested(false);
+    categoryTouchedRef.current = false;
     if (!params.bankSuggestion) return;
     const suggestion = getBankSuggestion(params.bankSuggestion);
     if (!suggestion) {
@@ -47,7 +52,14 @@ export default function QuickEntryScreen() {
     setCategoryId(suggestion.type === "income" ? "outros-receita" : "outros-despesa");
     setDescription(suggestion.description);
     setOccurredAt(suggestion.occurredAt);
-  }, [params.bankSuggestion]);
+    void suggestCategoryFromHistory(db, suggestion.type, suggestion.description).then((category) => {
+      if (active && category && !categoryTouchedRef.current) {
+        setCategoryId(category);
+        setCategorySuggested(true);
+      }
+    }).catch(() => { /* Keep Outros when local history is unavailable. */ });
+    return () => { active = false; };
+  }, [db, params.bankSuggestion]);
 
   useEffect(() => {
     let active = true;
@@ -107,7 +119,7 @@ export default function QuickEntryScreen() {
                     key={item}
                     accessibilityRole="tab"
                     accessibilityState={{ selected }}
-                    onPress={() => { setType(item); void Haptics.selectionAsync(); }}
+                    onPress={() => { categoryTouchedRef.current = true; setCategorySuggested(false); setType(item); void Haptics.selectionAsync(); }}
                     style={({ pressed }) => [styles.typeButton, { backgroundColor: selected ? colors.surface : "transparent", borderColor: selected ? colors.border : "transparent", opacity: pressed ? 0.7 : 1 }]}
                   >
                     <Text style={[styles.typeText, { color: selected ? colors.text : colors.textMuted }]}>{item === "expense" ? "Despesa" : "Receita"}</Text>
@@ -127,7 +139,8 @@ export default function QuickEntryScreen() {
 
           <View style={styles.section}>
             <Label>Categoria</Label>
-            <CategorySelector categories={categories} selectedId={categoryId} onSelect={(id) => { setCategoryId(id); void Haptics.selectionAsync(); }} />
+            <CategorySelector categories={categories} selectedId={categoryId} onSelect={(id) => { categoryTouchedRef.current = true; setCategorySuggested(false); setCategoryId(id); void Haptics.selectionAsync(); }} />
+            {categorySuggested && <Text style={[styles.hint, { color: colors.textMuted }]}>Categoria sugerida pelo seu histórico. Confira antes de salvar.</Text>}
           </View>
 
           <View style={styles.section}>

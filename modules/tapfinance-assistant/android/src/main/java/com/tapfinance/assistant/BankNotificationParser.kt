@@ -16,6 +16,7 @@ internal object BankNotificationParser {
   private val cardPurchase = Regex("\\bcompra (aprovada|realizada|confirmada)\\b")
   private val pixSent = Regex("\\bpix (enviado|realizado|efetuado|transferido)\\b")
   private val pixReceived = Regex("\\bpix (recebido|creditado)\\b")
+  private val receivedSender = Regex("^\\s*([\\p{L}][\\p{L} .'-]{1,69})\\s+te enviou um Pix de R\\$\\s*", RegexOption.IGNORE_CASE)
 
   fun isSupportedBank(packageName: String): Boolean = packageName in bankPackages
 
@@ -38,7 +39,7 @@ internal object BankNotificationParser {
     val type = if (received) "income" else "expense"
     val description = when {
       purchase -> "Compra no cartão"
-      received -> "Pix recebido"
+      received -> receivedSender.find(body)?.groupValues?.get(1)?.trim()?.replace(Regex("\\s+"), " ")?.let { "Pix de $it" } ?: "Pix recebido"
       else -> "Pix enviado"
     }
     return ParsedBankSuggestion(type, cents, description, postedAt)

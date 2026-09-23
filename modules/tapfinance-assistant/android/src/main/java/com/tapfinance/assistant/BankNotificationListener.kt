@@ -14,6 +14,8 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import java.text.NumberFormat
+import java.util.Locale
 
 internal object BankNotificationAccess {
   fun canRead(context: Context): Boolean = NotificationManagerCompat.getEnabledListenerPackages(context)
@@ -47,10 +49,12 @@ class BankNotificationListener : NotificationListenerService() {
         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       }
       val pendingIntent = PendingIntent.getActivity(this, id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      val amount = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-BR")).format(parsed.amountCents / 100.0)
+      val direction = if (parsed.type == "income") "Receita" else "Despesa"
       val notification = NotificationCompat.Builder(this, CHANNEL)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setContentTitle("Novo lançamento sugerido")
-        .setContentText("Toque para conferir os dados antes de salvar.")
+        .setContentTitle("$direction sugerida: $amount")
+        .setContentText("${parsed.description} · Confira antes de salvar.")
         .setContentIntent(pendingIntent)
         .setAutoCancel(true)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

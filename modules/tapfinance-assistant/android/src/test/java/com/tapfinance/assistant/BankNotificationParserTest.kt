@@ -27,7 +27,7 @@ class BankNotificationParserTest {
     assertEquals(5099L, received?.amountCents)
   }
 
-  @Test fun readsInterReceivedPixWithoutKeepingSenderOrAccount() {
+  @Test fun readsInterReceivedPixKeepingOnlySender() {
     val parsed = BankNotificationParser.parse(
       "br.com.intermedium",
       "Pix recebido",
@@ -36,7 +36,7 @@ class BankNotificationParserTest {
     )
     assertEquals("income", parsed?.type)
     assertEquals(10000L, parsed?.amountCents)
-    assertEquals("Pix recebido", parsed?.description)
+    assertEquals("Pix de Pessoa Exemplo", parsed?.description)
   }
 
   @Test fun rejectsAmbiguousAndUntrustedNotifications() {

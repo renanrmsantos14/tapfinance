@@ -49,6 +49,22 @@ export async function getTransaction(db: SQLiteDatabase, id: string): Promise<Tr
   return row ? mapTransaction(row) : null;
 }
 
+export async function suggestCategoryFromHistory(db: SQLiteDatabase, type: TransactionType, description: string): Promise<string | null> {
+  const normalized = description.trim();
+  if (!normalized) return null;
+  const matches = await db.getAllAsync<{ category_id: string; uses: number }>(
+    `SELECT t.category_id, COUNT(*) AS uses
+     FROM transactions t JOIN categories c ON c.id = t.category_id
+     WHERE t.type = ? AND c.type = ? AND c.is_active = 1
+       AND LOWER(TRIM(t.description)) = LOWER(?)
+       AND t.category_id NOT IN ('outros-despesa', 'outros-receita')
+     GROUP BY t.category_id ORDER BY uses DESC LIMIT 2`,
+    type, type, normalized,
+  );
+  const requiredUses = normalized.toLocaleLowerCase("pt-BR").startsWith("pix de ") ? 1 : 2;
+  return matches[0]?.uses >= requiredUses && matches[0].uses > (matches[1]?.uses ?? 0) ? matches[0].category_id : null;
+}
+
 export async function createTransaction(db: SQLiteDatabase, draft: TransactionDraft, sourceSuggestionId?: string): Promise<string> {
   const now = Date.now();
   const id = createId();
