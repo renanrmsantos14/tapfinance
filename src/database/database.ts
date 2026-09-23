@@ -63,6 +63,16 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 1, Date.now());
   }
 
+  if (version < 2) {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE transactions ADD COLUMN source_suggestion_id TEXT;
+        CREATE UNIQUE INDEX idx_transactions_source_suggestion ON transactions(source_suggestion_id);
+      `);
+      await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 2, Date.now());
+    });
+  }
+
   const now = Date.now();
   const statement = await db.prepareAsync(
     "INSERT OR IGNORE INTO categories (id, name, icon, type, position, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",

@@ -49,11 +49,11 @@ export async function getTransaction(db: SQLiteDatabase, id: string): Promise<Tr
   return row ? mapTransaction(row) : null;
 }
 
-export async function createTransaction(db: SQLiteDatabase, draft: TransactionDraft): Promise<string> {
+export async function createTransaction(db: SQLiteDatabase, draft: TransactionDraft, sourceSuggestionId?: string): Promise<string> {
   const now = Date.now();
   const id = createId();
-  await db.runAsync(
-    "INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  const result = await db.runAsync(
+    "INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, source_suggestion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_suggestion_id) DO NOTHING",
     id,
     draft.type,
     draft.amountCents,
@@ -62,7 +62,13 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
     draft.occurredAt,
     now,
     now,
+    sourceSuggestionId ?? null,
   );
+  if (result.changes === 0 && sourceSuggestionId) {
+    const existing = await db.getFirstAsync<{ id: string }>("SELECT id FROM transactions WHERE source_suggestion_id = ?", sourceSuggestionId);
+    if (existing) return existing.id;
+    throw new Error("Lançamento da sugestão não encontrado após conflito.");
+  }
   return id;
 }
 

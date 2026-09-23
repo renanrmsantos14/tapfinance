@@ -1,10 +1,13 @@
 package com.tapfinance.assistant
 
 import android.app.Activity
+import android.Manifest
 import android.app.role.RoleManager
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import java.io.File
 import java.net.HttpURLConnection
@@ -52,6 +55,55 @@ class TapFinanceAssistantModule : Module() {
         "Papel de assistente disponível: $roleAvailable\n" +
         "Papel de assistente ativo: $roleHeld\n" +
         "Eventos (UTC):\n${AssistantDiagnostics.events(context).ifBlank { "Nenhum evento registrado" }}"
+    }
+
+    Function("hasBankNotificationAccess") {
+      val context = appContext.reactContext ?: return@Function false
+      BankNotificationAccess.canRead(context)
+    }
+
+    Function("canPostBankAlerts") {
+      val context = appContext.reactContext ?: return@Function false
+      BankNotificationAccess.canAlert(context)
+    }
+
+    Function("getBankSuggestion") { id: String ->
+      val context = appContext.reactContext ?: return@Function null
+      BankSuggestionStore.get(context, id)
+    }
+
+    Function("markBankSuggestionHandled") { id: String ->
+      val context = appContext.reactContext ?: return@Function
+      BankSuggestionStore.markHandled(context, id)
+      NotificationManagerCompat.from(context).cancel(id.hashCode())
+    }
+
+    AsyncFunction("openBankNotificationAccessSettings") { promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+      promise.resolve(true)
+    }
+
+    AsyncFunction("requestBankAlertPermission") { promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      if (Build.VERSION.SDK_INT >= 33) {
+        if (activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+          ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4108)
+        } else {
+          activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
+        }
+      } else if (!BankNotificationAccess.canAlert(activity)) {
+        activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
+      }
+      promise.resolve(true)
     }
 
     AsyncFunction("installUpdate") { downloadUrl: String, expectedDigest: String ->

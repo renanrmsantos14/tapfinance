@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, AppState, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, Download, ExternalLink, Info, LockKeyhole, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
@@ -9,6 +9,7 @@ import { Label, Reveal, Screen } from "../src/components/ui";
 import { exportTransactions } from "../src/services/exportService";
 import { getDiagnosticReport, installUpdate, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
 import { checkForUpdate } from "../src/services/updateService";
+import { canPostBankAlerts, hasBankNotificationAccess, openBankNotificationAccessSettings, requestBankAlertPermission } from "../src/services/bankNotificationService";
 import { radius, useAppColors } from "../src/theme";
 
 export default function SettingsScreen() {
@@ -20,6 +21,8 @@ export default function SettingsScreen() {
   const [assistantHeld, setAssistantHeld] = useState(false);
   const [checkingAssistant, setCheckingAssistant] = useState(true);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [bankAccess, setBankAccess] = useState(false);
+  const [bankAlerts, setBankAlerts] = useState(false);
 
   const loadRole = useCallback(async () => {
     setCheckingAssistant(true);
@@ -36,6 +39,31 @@ export default function SettingsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { void loadRole(); }, [loadRole]));
+  useFocusEffect(useCallback(() => {
+    setBankAccess(hasBankNotificationAccess());
+    setBankAlerts(canPostBankAlerts());
+  }, []));
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        setBankAccess(hasBankNotificationAccess());
+        setBankAlerts(canPostBankAlerts());
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  async function openBankAccess() {
+    if (!await openBankNotificationAccessSettings()) {
+      Alert.alert("Indisponível", "Instale o build Android do TapFinance para configurar esta função.");
+    }
+  }
+
+  async function requestBankAlerts() {
+    if (!await requestBankAlertPermission()) {
+      Alert.alert("Indisponível", "Instale o build Android do TapFinance para configurar esta função.");
+    }
+  }
 
   async function activateAssistant() {
     if (assistantAvailable) {
@@ -156,6 +184,29 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           </View>
+
+          {Platform.OS === "android" && <>
+            <View style={styles.sectionGap}><Label>Lançamentos por notificação</Label></View>
+            <View style={[styles.rows, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Pressable accessibilityRole="button" onPress={() => void openBankAccess()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+                <View style={[styles.rowIcon, { backgroundColor: colors.accentSoft }]}><ShieldCheck color={colors.accent} size={18} /></View>
+                <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Ler notificações bancárias</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>{bankAccess ? "Acesso ativo" : "Toque para autorizar no Android"}</Text></View>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => void requestBankAlerts()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}>
+                <View style={[styles.rowIcon, { backgroundColor: colors.surfaceMuted }]}><Smartphone color={colors.text} size={18} /></View>
+                <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Receber sugestões</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>{bankAlerts ? "Avisos ativos" : "Toque para permitir avisos"}</Text></View>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </Pressable>
+            </View>
+            <View style={[styles.help, { backgroundColor: colors.accentSoft }]}>
+              <Info color={colors.accent} size={19} />
+              <View style={styles.helpCopy}>
+                <Text style={[styles.helpTitle, { color: colors.text }]}>Inter, C6 e Santander</Text>
+                <Text style={[styles.helpText, { color: colors.textMuted }]}>O Android concede acesso amplo às notificações. O TapFinance processa apenas avisos desses três bancos, guarda só a sugestão no aparelho e abre o formulário quando você toca no aviso. Confira os dados antes de salvar.</Text>
+              </View>
+            </View>
+          </>}
 
           <View style={styles.sectionGap}><Label>Dados e privacidade</Label></View>
           <View style={[styles.rows, { backgroundColor: colors.surface, borderColor: colors.border }]}>

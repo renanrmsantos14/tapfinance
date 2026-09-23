@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ArrowLeft, Check } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -13,47 +13,74 @@ import type { Category, TransactionType } from "../src/types/category";
 import { radius, useAppColors } from "../src/theme";
 import { validateTransactionDraft } from "../src/utils/validation";
 import { recordQuickEntryOpened } from "../src/services/assistantService";
+import { getBankSuggestion, markBankSuggestionHandled } from "../src/services/bankNotificationService";
 
 export default function QuickEntryScreen() {
   const db = useSQLiteContext();
   const colors = useAppColors();
-  const params = useLocalSearchParams<{ assistant?: string }>();
+  const params = useLocalSearchParams<{ assistant?: string; bankSuggestion?: string }>();
   const [type, setType] = useState<TransactionType>("expense");
   const [amountCents, setAmountCents] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [occurredAt, setOccurredAt] = useState(Date.now());
+  const [suggestionId, setSuggestionId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     if (params.assistant === "1") recordQuickEntryOpened();
   }, [params.assistant]);
 
-  const loadCategories = useCallback(async () => {
-    const next = await listCategories(db, type);
-    setCategories(next);
-    setCategoryId((current) => next.some((item) => item.id === current) ? current : next[0]?.id ?? null);
+  useEffect(() => {
+    setSuggestionId(null);
+    if (!params.bankSuggestion) return;
+    const suggestion = getBankSuggestion(params.bankSuggestion);
+    if (!suggestion) {
+      Alert.alert("Sugestão indisponível", "Ela pode ter expirado ou já ter sido usada. Você ainda pode criar um lançamento manual.");
+      return;
+    }
+    setSuggestionId(suggestion.id);
+    setType(suggestion.type);
+    setAmountCents(suggestion.amountCents);
+    setCategoryId(suggestion.type === "income" ? "outros-receita" : "outros-despesa");
+    setDescription(suggestion.description);
+    setOccurredAt(suggestion.occurredAt);
+  }, [params.bankSuggestion]);
+
+  useEffect(() => {
+    let active = true;
+    void listCategories(db, type).then((next) => {
+      if (!active) return;
+      setCategories(next);
+      setCategoryId((current) => next.some((item) => item.id === current) ? current : next[0]?.id ?? null);
+    });
+    return () => { active = false; };
   }, [db, type]);
 
-  useEffect(() => { void loadCategories(); }, [loadCategories]);
-
   async function save() {
-    if (saving) return;
-    const draft = { type, amountCents, categoryId: categoryId ?? "", description, occurredAt: Date.now() };
+    if (savingRef.current) return;
+    const draft = { type, amountCents, categoryId: categoryId ?? "", description, occurredAt: suggestionId ? occurredAt : Date.now() };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     try {
-      await createTransaction(db, draft);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await createTransaction(db, draft, suggestionId ?? undefined);
+      if (suggestionId) {
+        try { markBankSuggestionHandled(suggestionId); } catch { /* SQLite already prevents a second save. */ }
+      }
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { /* Save already succeeded. */ }
       if (params.assistant === "1") router.dismissAll();
       else router.back();
     } catch {
       Alert.alert("Não foi possível salvar", "Tente novamente. O lançamento não foi alterado.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -66,7 +93,7 @@ export default function QuickEntryScreen() {
             <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
             <View style={styles.topCopy}>
               <Text style={[styles.topTitle, { color: colors.text }]}>Novo lançamento</Text>
-              <Text style={[styles.topSubtitle, { color: colors.textMuted }]}>Registre em poucos segundos</Text>
+              <Text style={[styles.topSubtitle, { color: colors.textMuted }]}>{suggestionId ? "Sugestão do banco · confira antes de salvar" : "Registre em poucos segundos"}</Text>
             </View>
             <View style={styles.topSpacer} />
           </View>
