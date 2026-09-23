@@ -25,7 +25,8 @@ internal object AssistantDiagnostics {
     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS 'UTC'", Locale.US).apply {
       timeZone = TimeZone.getTimeZone("UTC")
     }.format(Date())
-    val entry = "$timestamp | $event" + (error?.let { " | ${it.javaClass.simpleName}" } ?: "")
+    val detail = error?.let { " | ${it.javaClass.simpleName}: ${it.message.orEmpty().replace('\n', ' ').take(400)}" }.orEmpty()
+    val entry = "$timestamp | $event$detail"
     val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val entries = prefs.getString(EVENTS, "").orEmpty().lines().filter { it.isNotBlank() }
     prefs.edit().putString(EVENTS, (entries + entry).takeLast(30).joinToString("\n")).commit()

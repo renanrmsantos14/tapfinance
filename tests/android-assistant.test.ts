@@ -31,4 +31,7 @@ test("assistant cold start opens the main activity through the voice session", (
   assert.match(session, /setClassName\(context\.packageName, "\$\{context\.packageName\}\.MainActivity"\)/);
   assert.match(session, /startVoiceActivity\(intent\)/);
   assert.match(session, /onTaskStarted/);
+  assert.match(session, /context\.startActivity\(Intent\(intent\)\.addFlags\(Intent\.FLAG_ACTIVITY_NEW_TASK\)\)/);
+  const diagnostics = readFileSync(join(root, "modules/tapfinance-assistant/android/src/main/java/com/tapfinance/assistant/AssistantDiagnostics.kt"), "utf8");
+  assert.match(diagnostics, /it\.message\.orEmpty\(\)/);
 });

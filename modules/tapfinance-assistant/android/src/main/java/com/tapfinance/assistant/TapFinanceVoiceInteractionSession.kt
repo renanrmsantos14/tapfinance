@@ -21,7 +21,13 @@ class TapFinanceVoiceInteractionSession(context: android.content.Context) : Voic
       startVoiceActivity(intent)
       AssistantDiagnostics.record(context, "main voice activity requested")
     } catch (error: RuntimeException) {
-      AssistantDiagnostics.record(context, "assistant activity launch failed", error)
+      AssistantDiagnostics.record(context, "voice activity launch failed", error)
+      try {
+        context.startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        AssistantDiagnostics.record(context, "normal activity requested")
+      } catch (fallbackError: RuntimeException) {
+        AssistantDiagnostics.record(context, "normal activity launch failed", fallbackError)
+      }
     }
   }
 
