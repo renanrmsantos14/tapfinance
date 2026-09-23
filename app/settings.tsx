@@ -8,7 +8,7 @@ import { BottomNav } from "../src/components/BottomNav";
 import { Label, Reveal, Screen } from "../src/components/ui";
 import { exportTransactions } from "../src/services/exportService";
 import { getDiagnosticReport, installUpdate, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
-import { checkForUpdate, type Update } from "../src/services/updateService";
+import { checkForUpdate } from "../src/services/updateService";
 import { radius, useAppColors } from "../src/theme";
 
 export default function SettingsScreen() {
@@ -92,23 +92,9 @@ export default function SettingsScreen() {
         Alert.alert("App atualizado", `Você já está na versão ${appVersion}.`);
         return;
       }
-      Alert.alert("Atualização disponível", `Versão ${update.version}. Baixar e abrir o instalador do Android?`, [
-        { text: "Agora não", style: "cancel" },
-        { text: "Atualizar", onPress: () => { void startUpdate(update); } },
-      ]);
-    } catch (error) {
-      Alert.alert("Não foi possível verificar", error instanceof Error ? error.message : "Confira a conexão e tente novamente.");
-    } finally {
-      setCheckingUpdate(false);
-    }
-  }
-
-  async function startUpdate(update: Update) {
-    setCheckingUpdate(true);
-    try {
       await installUpdate(update.url, update.digest);
     } catch (error) {
-      Alert.alert("Não foi possível instalar", error instanceof Error ? error.message : "Tente novamente.");
+      Alert.alert("Não foi possível atualizar", error instanceof Error ? error.message : "Confira a conexão e tente novamente.");
     } finally {
       setCheckingUpdate(false);
     }
@@ -189,7 +175,7 @@ export default function SettingsScreen() {
             <Text style={[styles.version, { color: colors.textMuted }]}>Versão {appVersion} · build {androidVersionCode ?? "—"}</Text>
             {Platform.OS === "android" && <Pressable accessibilityRole="button" disabled={checkingUpdate} onPress={() => void checkUpdate()} style={({ pressed }) => [styles.updateButton, { backgroundColor: colors.accent, opacity: checkingUpdate || pressed ? 0.65 : 1 }]}>
               <Download color="#fff" size={17} />
-              <Text style={styles.updateText}>{checkingUpdate ? "Verificando ou baixando…" : "Verificar atualização"}</Text>
+              <Text style={styles.updateText}>{checkingUpdate ? "Verificando ou baixando…" : "Atualizar app"}</Text>
             </Pressable>}
           </View>
         </Screen>

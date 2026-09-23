@@ -15,10 +15,17 @@ export function isNewerVersion(latest: string, installed: string): boolean {
 }
 
 export async function checkForUpdate(installedVersion: string): Promise<Update | null> {
-  const response = await fetch("https://api.github.com/repos/renanrmsantos14/tapfinance/releases/latest", {
-    headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(15000),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch("https://api.github.com/repos/renanrmsantos14/tapfinance/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) throw new Error(`Consulta ao GitHub falhou (${response.status}).`);
   const release = await response.json() as Release;
   if (!isNewerVersion(release.tag_name, installedVersion)) return null;
