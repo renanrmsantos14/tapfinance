@@ -7,6 +7,7 @@ import android.service.voice.VoiceInteractionSession
 class TapFinanceVoiceInteractionService : VoiceInteractionService() {
   override fun onReady() {
     super.onReady()
+    AssistantDiagnostics.record(this, "voice service ready")
     setDisabledShowContext(VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
   }
 }

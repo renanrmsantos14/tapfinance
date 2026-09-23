@@ -71,6 +71,15 @@ No POCO/HyperOS, o fluxo esperado é:
 
 Os rótulos podem mudar conforme idioma e versão do HyperOS. O app não tenta detectar o gesto por acelerômetro, não usa APIs privadas Xiaomi e não afirma que o caminho visual foi validado sem o aparelho.
 
+### Teste manual sem computador
+
+1. Instale o novo APK e confirme que TapFinance continua selecionado como assistente digital padrão.
+2. Abra **Ajustes → Iniciar teste do Back Tap**.
+3. Aperte Home e faça o Back Tap uma vez. Se nada abrir, não repita o gesto antes de coletar o diagnóstico.
+4. Reabra TapFinance pelo ícone, vá a **Ajustes → Compartilhar diagnóstico** e envie o texto gerado.
+
+O relatório contém versão do APK, modelo/Android, estado do papel de assistente e até 30 eventos recentes com horário UTC. Não inclui lançamentos financeiros. Se aparecer apenas `manual test started`, o gesto não chegou aos componentes do TapFinance; a causa exata exige verificar a configuração ou o comportamento do HyperOS. Se aparecer `voice session shown` mas não `quick-entry route opened`, a falha ocorreu na abertura da tela.
+
 ## Funcionalidades
 
 - Resumo mensal de saldo, receitas, despesas e lançamentos recentes.

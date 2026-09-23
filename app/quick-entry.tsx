@@ -12,6 +12,7 @@ import { createTransaction } from "../src/repositories/transactionRepository";
 import type { Category, TransactionType } from "../src/types/category";
 import { radius, useAppColors } from "../src/theme";
 import { validateTransactionDraft } from "../src/utils/validation";
+import { recordQuickEntryOpened } from "../src/services/assistantService";
 
 export default function QuickEntryScreen() {
   const db = useSQLiteContext();
@@ -23,6 +24,10 @@ export default function QuickEntryScreen() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (params.assistant === "1") recordQuickEntryOpened();
+  }, [params.assistant]);
 
   const loadCategories = useCallback(async () => {
     const next = await listCategories(db, type);

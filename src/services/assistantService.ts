@@ -5,6 +5,9 @@ type AssistantModule = {
   isAssistantRoleHeld: () => Promise<boolean>;
   requestAssistantRole: () => Promise<boolean>;
   openAssistantSettings: () => Promise<boolean>;
+  startDiagnosticTest: () => boolean;
+  recordQuickEntryOpened: () => void;
+  getDiagnosticReport: () => string;
 };
 
 let native: AssistantModule | null = null;
@@ -14,3 +17,6 @@ export async function isAssistantRoleAvailable(): Promise<boolean> { return nati
 export async function isAssistantRoleHeld(): Promise<boolean> { return native?.isAssistantRoleHeld() ?? false; }
 export async function requestAssistantRole(): Promise<boolean> { return native?.requestAssistantRole() ?? false; }
 export async function openAssistantSettings(): Promise<boolean> { return native?.openAssistantSettings() ?? false; }
+export function startDiagnosticTest(): boolean { return native?.startDiagnosticTest() ?? false; }
+export function recordQuickEntryOpened(): void { native?.recordQuickEntryOpened(); }
+export function getDiagnosticReport(): string { return native?.getDiagnosticReport() ?? "TapFinance: módulo nativo indisponível"; }

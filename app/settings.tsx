@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ChevronRight, Download, ExternalLink, Info, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react-native";
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { ChevronRight, Download, ExternalLink, Info, LockKeyhole, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { Label, Reveal, Screen } from "../src/components/ui";
 import { exportTransactions } from "../src/services/exportService";
-import { isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole } from "../src/services/assistantService";
+import { getDiagnosticReport, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
 import { radius, useAppColors } from "../src/theme";
 
 export default function SettingsScreen() {
@@ -65,6 +65,22 @@ export default function SettingsScreen() {
     }
   }
 
+  function startTest() {
+    if (!startDiagnosticTest()) {
+      Alert.alert("Diagnóstico indisponível", "Instale o build Android do TapFinance para testar o assistente.");
+      return;
+    }
+    Alert.alert("Teste iniciado", "Aperte Home, use o Back Tap e volte aos Ajustes. Depois toque em Compartilhar diagnóstico.");
+  }
+
+  async function shareDiagnostics() {
+    try {
+      await Share.share({ message: getDiagnosticReport(), title: "Diagnóstico Back Tap - TapFinance" });
+    } catch {
+      Alert.alert("Não foi possível compartilhar", "Tente novamente.");
+    }
+  }
+
   const statusLabel = checkingAssistant ? "Verificando…" : assistantHeld ? "Ativo neste aparelho" : assistantAvailable ? "Disponível para ativar" : "Configuração manual";
   const statusColor = checkingAssistant ? colors.textMuted : assistantHeld ? colors.positive : colors.warning;
   const statusBackground = checkingAssistant ? colors.surfaceMuted : assistantHeld ? colors.positiveSoft : colors.warningSoft;
@@ -95,6 +111,16 @@ export default function SettingsScreen() {
               <Pressable accessibilityRole="button" onPress={() => void activateAssistant()} style={({ pressed }) => [styles.actionRow, { borderTopColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}>
                 <ShieldCheck color={colors.text} size={18} />
                 <Text style={[styles.actionText, { color: colors.text }]}>{assistantHeld ? "Verificar nas configurações" : "Configurar como assistente"}</Text>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={startTest} style={({ pressed }) => [styles.actionRow, { borderTopColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}>
+                <Info color={colors.text} size={18} />
+                <Text style={[styles.actionText, { color: colors.text }]}>Iniciar teste do Back Tap</Text>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => void shareDiagnostics()} style={({ pressed }) => [styles.actionRow, { borderTopColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}>
+                <Share2 color={colors.text} size={18} />
+                <Text style={[styles.actionText, { color: colors.text }]}>Compartilhar diagnóstico</Text>
                 <ChevronRight color={colors.textMuted} size={18} />
               </Pressable>
             </View>

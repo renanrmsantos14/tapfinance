@@ -25,6 +25,30 @@ class TapFinanceAssistantModule : Module() {
       roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true
     }
 
+    Function("startDiagnosticTest") {
+      val context = appContext.reactContext ?: return@Function false
+      AssistantDiagnostics.startTest(context)
+      true
+    }
+
+    Function("recordQuickEntryOpened") {
+      appContext.reactContext?.let { AssistantDiagnostics.record(it, "quick-entry route opened") }
+    }
+
+    Function("getDiagnosticReport") {
+      val context = appContext.reactContext ?: return@Function "TapFinance: módulo nativo indisponível"
+      val roleManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) context.getSystemService(RoleManager::class.java) else null
+      val roleAvailable = roleManager?.isRoleAvailable(RoleManager.ROLE_ASSISTANT) == true
+      val roleHeld = roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true
+      val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+      "TapFinance ${packageInfo.versionName} | build ${if (Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode else packageInfo.versionCode.toLong()}\n" +
+        "${AssistantDiagnostics.device()}\n" +
+        "Pacote: ${context.packageName}\n" +
+        "Papel de assistente disponível: $roleAvailable\n" +
+        "Papel de assistente ativo: $roleHeld\n" +
+        "Eventos (UTC):\n${AssistantDiagnostics.events(context).ifBlank { "Nenhum evento registrado" }}"
+    }
+
     AsyncFunction("requestAssistantRole") { promise: Promise ->
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
         promise.resolve(false)
