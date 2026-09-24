@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Haptics from "expo-haptics";
 import { CategorySelector } from "../src/components/CategorySelector";
+import { AccountSelector } from "../src/components/AccountSelector";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { Label, PrimaryButton, QuietButton, Reveal, Screen } from "../src/components/ui";
 import { listCategories } from "../src/repositories/categoryRepository";
@@ -14,14 +15,21 @@ import { radius, useAppColors } from "../src/theme";
 import { validateTransactionDraft } from "../src/utils/validation";
 import { recordQuickEntryOpened } from "../src/services/assistantService";
 import { getBankSuggestion, markBankSuggestionHandled } from "../src/services/bankNotificationService";
+import { listAccounts, listGoals, listLoans } from "../src/repositories/financeRepository";
+import type { Account } from "../src/types/finance";
+import type { Goal, Loan } from "../src/types/finance";
 
 export default function QuickEntryScreen() {
   const db = useSQLiteContext();
   const colors = useAppColors();
-  const params = useLocalSearchParams<{ assistant?: string; bankSuggestion?: string }>();
+  const params = useLocalSearchParams<{ assistant?: string; bankSuggestion?: string; loanId?: string; goalId?: string }>();
   const [type, setType] = useState<TransactionType>("expense");
   const [amountCents, setAmountCents] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [goals, setGoals] = useState<Goal[]>([]); const [loans, setLoans] = useState<Loan[]>([]);
+  const [linkedId, setLinkedId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [occurredAt, setOccurredAt] = useState(Date.now());
@@ -71,9 +79,48 @@ export default function QuickEntryScreen() {
     return () => { active = false; };
   }, [db, type]);
 
+  useEffect(() => {
+    let active = true;
+    void listAccounts(db).then((next) => {
+      if (!active) return;
+      setAccounts(next);
+      setAccountId((current) => next.some((item) => item.id === current) ? current : next.find((item) => item.isPrimary)?.id ?? next[0]?.id ?? null);
+    });
+    return () => { active = false; };
+  }, [db]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([listGoals(db), listLoans(db)]).then(([nextGoals, nextLoans]) => {
+      if (!active) return;
+      setGoals(nextGoals); setLoans(nextLoans);
+    });
+    return () => { active = false; };
+  }, [db]);
+
+  useEffect(() => {
+    if (params.loanId) {
+      const loan = loans.find((item) => item.id === params.loanId);
+      if (!loan) return;
+      setLinkedId(`loan:${loan.id}`);
+      setType(loan.direction === "lent" ? "income" : "expense");
+      setAmountCents(loan.remainingCents);
+      setDescription(`Pagamento de ${loan.name}`);
+    } else if (params.goalId) {
+      const goal = goals.find((item) => item.id === params.goalId);
+      if (!goal) return;
+      setLinkedId(`goal:${goal.id}`);
+      setType(goal.type);
+      setAmountCents(Math.max(0, goal.targetCents - goal.progressCents));
+      setDescription(goal.name);
+    }
+  }, [goals, loans, params.goalId, params.loanId]);
+
   async function save() {
     if (savingRef.current) return;
-    const draft = { type, amountCents, categoryId: categoryId ?? "", description, occurredAt: suggestionId ? occurredAt : Date.now() };
+    const linkedGoal = linkedId?.startsWith("goal:") ? linkedId.slice(5) : null;
+    const linkedLoan = linkedId?.startsWith("loan:") ? linkedId.slice(5) : null;
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId: linkedGoal, loanId: linkedLoan, description, title: description, occurredAt: suggestionId ? occurredAt : Date.now() };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -109,6 +156,20 @@ export default function QuickEntryScreen() {
             </View>
             <View style={styles.topSpacer} />
           </View>
+
+          <View style={styles.section}>
+            <Label>Conta</Label>
+            <AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} />
+          </View>
+
+          {(goals.length > 0 || loans.length > 0) && <View style={styles.section}>
+            <Label>Vincular a uma meta ou empréstimo <Text style={styles.optional}>(opcional)</Text></Label>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.linkRow}>
+              <Pressable accessibilityRole="radio" accessibilityState={{ selected: linkedId === null }} onPress={() => setLinkedId(null)} style={[styles.linkOption, { backgroundColor: linkedId === null ? colors.accentSoft : colors.surface, borderColor: linkedId === null ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: linkedId === null ? colors.accent : colors.textMuted }]}>Nenhum</Text></Pressable>
+              {goals.map((goal) => { const id = `goal:${goal.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLinkedId(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{goal.name}</Text></Pressable>; })}
+              {loans.map((loan) => { const id = `loan:${loan.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLinkedId(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{loan.name}</Text></Pressable>; })}
+            </ScrollView>
+          </View>}
 
           <Reveal>
             <View accessibilityRole="tablist" style={[styles.typeSwitch, { backgroundColor: colors.surfaceMuted }]}>
@@ -189,4 +250,5 @@ const styles = StyleSheet.create({
   descriptionInput: { flex: 1, minHeight: 56, fontSize: 15 },
   counter: { fontSize: 11, marginLeft: 8 },
   save: { marginTop: 30 },
+  linkRow: { gap: 8 }, linkOption: { minHeight: 40, borderWidth: 1, borderRadius: radius.round, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" }, linkText: { fontSize: 12, fontWeight: "700" },
 });

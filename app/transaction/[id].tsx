@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Haptics from "expo-haptics";
 import { CategorySelector } from "../../src/components/CategorySelector";
+import { AccountSelector } from "../../src/components/AccountSelector";
 import { CurrencyInput } from "../../src/components/CurrencyInput";
 import { EmptyState, Label, PrimaryButton, QuietButton, Screen, SkeletonRows } from "../../src/components/ui";
 import { listCategories } from "../../src/repositories/categoryRepository";
@@ -13,7 +14,10 @@ import type { Category, TransactionType } from "../../src/types/category";
 import type { Transaction } from "../../src/types/transaction";
 import { radius, useAppColors } from "../../src/theme";
 import { formatDate, parseDateInput } from "../../src/utils/dates";
+import { formatCentsToBRL } from "../../src/utils/currency";
 import { validateTransactionDraft } from "../../src/utils/validation";
+import { listAccounts } from "../../src/repositories/financeRepository";
+import type { Account } from "../../src/types/finance";
 
 export default function TransactionDetailScreen() {
   const db = useSQLiteContext();
@@ -27,6 +31,10 @@ export default function TransactionDetailScreen() {
   const [amountCents, setAmountCents] = useState(0);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [goalId, setGoalId] = useState<string | null>(null); const [loanId, setLoanId] = useState<string | null>(null);
+  const [scheduleId, setScheduleId] = useState<string | null>(null); const [status, setStatus] = useState<"paid" | "pending">("paid");
   const [description, setDescription] = useState("");
   const [occurredAtText, setOccurredAtText] = useState(formatDate(Date.now()));
 
@@ -39,6 +47,9 @@ export default function TransactionDetailScreen() {
       setType(item.type);
       setAmountCents(item.amountCents);
       setCategoryId(item.categoryId);
+      setAccountId(item.accountId);
+      setGoalId(item.goalId); setLoanId(item.loanId);
+      setScheduleId(item.scheduleId); setStatus(item.status);
       setDescription(item.description ?? "");
       setOccurredAtText(formatDate(item.occurredAt));
     } catch {
@@ -55,6 +66,7 @@ export default function TransactionDetailScreen() {
       setCategoryId((current) => next.some((item) => item.id === current) ? current : next[0]?.id ?? null);
     });
   }, [db, type]);
+  useEffect(() => { void listAccounts(db).then(setAccounts); }, [db]);
 
   const save = useCallback(async () => {
     if (saving) return;
@@ -63,7 +75,7 @@ export default function TransactionDetailScreen() {
       Alert.alert("Confira a data", "Use o formato DD/MM/AAAA.");
       return;
     }
-    const draft = { type, amountCents, categoryId: categoryId ?? "", description, occurredAt: parsedDate };
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId, loanId, scheduleId, status, description, title: description, occurredAt: parsedDate };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -79,10 +91,10 @@ export default function TransactionDetailScreen() {
     } finally {
       setSaving(false);
     }
-  }, [amountCents, categoryId, db, description, id, occurredAtText, saving, type]);
+  }, [accountId, amountCents, categoryId, db, description, goalId, id, loanId, occurredAtText, saving, scheduleId, status, type]);
 
   function confirmDelete() {
-    Alert.alert("Excluir lançamento?", "Essa ação não pode ser desfeita.", [
+    Alert.alert(transaction?.kind === "transfer" ? "Excluir transferência?" : "Excluir lançamento?", transaction?.kind === "transfer" ? "As duas movimentações vinculadas serão excluídas. Essa ação não pode ser desfeita." : "Essa ação não pode ser desfeita.", [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: () => { void deleteTransaction(db, id).then(() => router.back()).catch(() => Alert.alert("Não foi possível excluir", "Tente novamente.")); } },
     ]);
@@ -100,6 +112,20 @@ export default function TransactionDetailScreen() {
         </View>
       </View>
     );
+  }
+
+  if (transaction.kind !== "standard") {
+    return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
+      <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
+      <Text style={[styles.specialTitle, { color: colors.text }]}>{transaction.kind === "transfer" ? "Transferência" : "Correção de saldo"}</Text>
+      <View style={[styles.specialCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.specialAmount, { color: colors.text }]}>{formatCentsToBRL(transaction.amountCents)}</Text>
+        <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{transaction.type === "expense" ? "Saída" : "Entrada"} · {transaction.accountName}</Text>
+        <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{formatDate(transaction.occurredAt)}{transaction.title ? ` · ${transaction.title}` : ""}</Text>
+      </View>
+      <Text style={[styles.specialNote, { color: colors.textMuted }]}>{transaction.kind === "transfer" ? "Esta movimentação faz parte de um par. Ao excluir, as duas partes são removidas juntas." : "Correções não podem ser convertidas em receitas ou despesas por esta tela."}</Text>
+      <Pressable accessibilityRole="button" onPress={confirmDelete} style={styles.deleteButton}><Trash2 color={colors.negative} size={17} /><Text style={[styles.deleteText, { color: colors.negative }]}>{transaction.kind === "transfer" ? "Excluir transferência" : "Excluir correção"}</Text></Pressable>
+    </Screen></ScrollView></View>;
   }
 
   return (
@@ -128,6 +154,8 @@ export default function TransactionDetailScreen() {
             <CurrencyInput value={amountCents} onChange={setAmountCents} />
           </View>
 
+          <View style={[styles.statusSwitch, { backgroundColor: colors.surfaceMuted }]}>{(["paid", "pending"] as const).map((item) => <Pressable key={item} accessibilityRole="radio" accessibilityState={{ selected: status === item }} onPress={() => setStatus(item)} style={[styles.statusOption, { borderColor: status === item ? colors.border : "transparent", backgroundColor: status === item ? colors.surface : "transparent" }]}><Text style={{ color: status === item ? colors.text : colors.textMuted, fontSize: 13, fontWeight: "700" }}>{item === "paid" ? "Pago" : "Pendente"}</Text></Pressable>)}</View>
+
           <View style={styles.rowFields}>
             <View style={styles.field}>
               <Label>Data</Label>
@@ -136,6 +164,7 @@ export default function TransactionDetailScreen() {
           </View>
 
           <View style={styles.section}><Label>Categoria</Label><CategorySelector categories={categories} selectedId={categoryId} onSelect={setCategoryId} /></View>
+          <View style={styles.section}><Label>Conta</Label><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} /></View>
           <View style={styles.section}>
             <Label>Descrição <Text style={styles.optional}>(opcional)</Text></Label>
             <TextInput accessibilityLabel="Descrição" value={description} onChangeText={setDescription} maxLength={80} placeholder="Adicione uma nota" placeholderTextColor={colors.textMuted} style={[styles.input, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} />
@@ -170,6 +199,7 @@ const styles = StyleSheet.create({
   typeButton: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   typeText: { fontSize: 14, fontWeight: "700" },
   amountCard: { borderWidth: 1, borderRadius: radius.lg, padding: 18, alignItems: "center" },
+  statusSwitch: { flexDirection: "row", borderRadius: radius.md, padding: 4, marginTop: 16 }, statusOption: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   rowFields: { marginTop: 24, flexDirection: "row" },
   field: { flex: 1, gap: 10 },
   section: { marginTop: 24, gap: 10 },
@@ -178,4 +208,5 @@ const styles = StyleSheet.create({
   save: { marginTop: 30 },
   deleteButton: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 },
   deleteText: { fontSize: 13, fontWeight: "700" },
+  specialTitle: { fontSize: 28, fontWeight: "800", marginTop: 25 }, specialCard: { borderWidth: 1, borderRadius: radius.lg, padding: 20, marginTop: 18 }, specialAmount: { fontSize: 30, fontWeight: "800" }, specialMeta: { fontSize: 13, marginTop: 9 }, specialNote: { fontSize: 12, lineHeight: 18, marginTop: 16 },
 });

@@ -20,22 +20,22 @@ export const lightColors = {
 };
 
 export const darkColors = {
-  background: "#171613",
-  surface: "#211F1B",
-  surfaceMuted: "#2C2924",
-  surfaceStrong: "#37322C",
-  text: "#F5F1E9",
-  textMuted: "#B3ACA0",
-  border: "#403B34",
-  accent: "#D39472",
-  accentSoft: "#443027",
-  accentContrast: "#1D1511",
-  positive: "#9FC4A2",
-  positiveSoft: "#26352A",
-  negative: "#E7A19D",
-  negativeSoft: "#402A2A",
-  warning: "#D8B66D",
-  warningSoft: "#3D341F",
+  background: "#070D17",
+  surface: "#0E2030",
+  surfaceMuted: "#172A3D",
+  surfaceStrong: "#243B52",
+  text: "#F3F7FF",
+  textMuted: "#9AAABC",
+  border: "#26384A",
+  accent: "#8DB9EA",
+  accentSoft: "#263E58",
+  accentContrast: "#091421",
+  positive: "#73D092",
+  positiveSoft: "#183A32",
+  negative: "#F17E88",
+  negativeSoft: "#412733",
+  warning: "#E6BD65",
+  warningSoft: "#3C3526",
 };
 
 export function useAppColors() {

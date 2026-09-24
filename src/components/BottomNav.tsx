@@ -1,13 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { ChartNoAxesCombined, Clock3, Settings } from "lucide-react-native";
+import { ChartNoAxesCombined, Clock3, Ellipsis, PieChart } from "lucide-react-native";
 import { router, usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { radius, useAppColors } from "../theme";
 
 const items = [
-  { path: "/", label: "Resumo", Icon: ChartNoAxesCombined },
-  { path: "/transactions", label: "Histórico", Icon: Clock3 },
-  { path: "/settings", label: "Ajustes", Icon: Settings },
+  { path: "/", label: "Início", Icon: ChartNoAxesCombined },
+  { path: "/transactions", label: "Transações", Icon: Clock3 },
+  { path: "/budgets", label: "Orçamentos", Icon: PieChart },
+  { path: "/more", label: "Mais", Icon: Ellipsis },
 ];
 
 export function BottomNav() {
@@ -17,7 +18,7 @@ export function BottomNav() {
   return (
     <View style={[styles.bar, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 8) }]}>
       {items.map(({ path, label, Icon }) => {
-        const active = pathname === path;
+        const active = path === "/" ? pathname === "/" : pathname === path || (path === "/more" && pathname === "/settings");
         return (
           <Pressable key={path} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={() => router.replace(path as "/") } style={({ pressed }) => [styles.item, { opacity: pressed ? 0.65 : 1 }]}>
             <View style={[styles.iconWrap, active && { backgroundColor: colors.accentSoft }]}><Icon color={active ? colors.accent : colors.textMuted} size={20} strokeWidth={active ? 2.5 : 2} /></View>

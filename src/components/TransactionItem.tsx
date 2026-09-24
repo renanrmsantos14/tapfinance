@@ -15,9 +15,9 @@ export function TransactionItem({ transaction, onPress, isLast = false }: { tran
         <Icon color={income ? colors.positive : colors.negative} size={19} strokeWidth={2.4} />
       </View>
       <View style={styles.detail}>
-        <Text style={[styles.category, { color: colors.text }]}>{transaction.categoryName}</Text>
+        <Text style={[styles.category, { color: colors.text }]}>{transaction.title || transaction.categoryName}</Text>
         <Text style={[styles.meta, { color: colors.textMuted }]}>
-          {formatShortDate(transaction.occurredAt)} · {transaction.description || formatTime(transaction.occurredAt)}
+          {transaction.categoryName} · {transaction.accountName} · {formatShortDate(transaction.occurredAt)} · {transaction.description || formatTime(transaction.occurredAt)}{transaction.status === "pending" ? " · Pendente" : ""}
         </Text>
       </View>
       <Text style={[styles.amount, { color: income ? colors.positive : colors.text }]}>{income ? "+" : "−"}{formatCentsToBRL(transaction.amountCents)}</Text>
