@@ -11,6 +11,16 @@ export type Transaction = {
   occurredAt: number;
   createdAt: number;
   updatedAt: number;
+  accountId: string;
+  accountName: string;
+  title: string | null;
+  notes: string | null;
+  status: "paid" | "pending";
+  kind: "standard" | "transfer" | "correction";
+  transferGroupId: string | null;
+  goalId: string | null;
+  loanId: string | null;
+  scheduleId: string | null;
 };
 
 export type TransactionDraft = {
@@ -19,4 +29,12 @@ export type TransactionDraft = {
   categoryId: string;
   description?: string;
   occurredAt: number;
+  accountId?: string;
+  title?: string;
+  notes?: string;
+  status?: "paid" | "pending";
+  kind?: "standard" | "transfer" | "correction";
+  goalId?: string | null;
+  loanId?: string | null;
+  scheduleId?: string | null;
 };

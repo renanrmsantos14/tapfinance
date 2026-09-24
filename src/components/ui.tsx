@@ -16,14 +16,25 @@ export function Label({ children }: { children: ReactNode }) {
   return <Text style={[styles.label, { color: colors.textMuted }]}>{children}</Text>;
 }
 
+export function useReducedMotion(): boolean | null {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setEnabled);
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setEnabled);
+    return () => subscription.remove();
+  }, []);
+  return enabled;
+}
+
 export function PrimaryButton({ children, style, onPress, disabled, accessibilityLabel }: { children: ReactNode; onPress?: PressableProps["onPress"]; disabled?: boolean; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
   const colors = useAppColors();
+  const reduceMotion = useReducedMotion();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
-      style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.text, opacity: disabled ? 0.5 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }, style]}
+      style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.text, opacity: disabled ? 0.5 : 1, transform: [{ scale: pressed && reduceMotion === false ? 0.97 : 1 }] }, style]}
       disabled={disabled}
       onPress={onPress}
     >
@@ -34,12 +45,13 @@ export function PrimaryButton({ children, style, onPress, disabled, accessibilit
 
 export function QuietButton({ children, onPress, style, accessibilityLabel }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
   const colors = useAppColors();
+  const reduceMotion = useReducedMotion();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={({ pressed }) => [styles.quietButton, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed ? 0.96 : 1 }] }, style]}
+      style={({ pressed }) => [styles.quietButton, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }, style]}
     >
       {children}
     </Pressable>
@@ -49,13 +61,7 @@ export function QuietButton({ children, onPress, style, accessibilityLabel }: { 
 export function Reveal({ children, delay = 0, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(8)).current;
-  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-    return () => subscription.remove();
-  }, []);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (reduceMotion === null) return;

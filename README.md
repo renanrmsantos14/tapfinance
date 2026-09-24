@@ -5,7 +5,8 @@ Aplicativo Android-first e local-first para registrar despesas e receitas em pou
 ## Release público
 
 - Repositório: https://github.com/renanrmsantos14/tapfinance
-- APK atual: https://github.com/renanrmsantos14/tapfinance/releases/latest/download/app-release.apk
+- APK estável: https://github.com/renanrmsantos14/tapfinance/releases/latest/download/app-release.apk
+- Pré-lançamento 1.2.0-beta.1: https://github.com/renanrmsantos14/tapfinance/releases/tag/v1.2.0-beta.1
 
 O APK de teste é assinado com a chave debug padrão do projeto. Para publicação na Play Store, configure uma keystore de produção.
 

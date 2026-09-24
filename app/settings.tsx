@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, AppState, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { ChevronRight, Download, ExternalLink, Info, LockKeyhole, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
+import { ChevronRight, Download, ExternalLink, FileUp, Info, LockKeyhole, RotateCcw, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
-import { useFocusEffect } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { Label, Reveal, Screen } from "../src/components/ui";
 import { exportTransactions } from "../src/services/exportService";
+import { exportFullBackup, inspectBackupFile, restoreFullBackup, shareRecoveryBackup } from "../src/services/backupService";
+import { importCsv, inspectCsvFile } from "../src/services/importService";
 import { getDiagnosticReport, installUpdate, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
 import { checkForUpdate } from "../src/services/updateService";
 import { canPostBankAlerts, hasBankNotificationAccess, openBankNotificationAccessSettings, requestBankAlertPermission } from "../src/services/bankNotificationService";
@@ -23,6 +26,7 @@ export default function SettingsScreen() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [bankAccess, setBankAccess] = useState(false);
   const [bankAlerts, setBankAlerts] = useState(false);
+  const [dataBusy, setDataBusy] = useState(false);
 
   const loadRole = useCallback(async () => {
     setCheckingAssistant(true);
@@ -93,6 +97,62 @@ export default function SettingsScreen() {
     } catch {
       Alert.alert("Não foi possível exportar", "Tente novamente.");
     }
+  }
+
+  async function shareBackup() {
+    setDataBusy(true);
+    try {
+      if (!await exportFullBackup(db)) Alert.alert("Compartilhamento indisponível", "Não foi possível abrir o compartilhamento neste aparelho.");
+    } catch (error) { Alert.alert("Não foi possível criar o backup", error instanceof Error ? error.message : "Tente novamente."); }
+    finally { setDataBusy(false); }
+  }
+
+  async function chooseBackup() {
+    setDataBusy(true);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
+      if (picked.canceled || !picked.assets[0]) return;
+      const preview = await inspectBackupFile(picked.assets[0].uri);
+      Alert.alert("Restaurar backup?", `O arquivo contém ${preview.accounts} contas e ${preview.transactions} lançamentos. Os dados atuais serão guardados em uma cópia de recuperação no aparelho.`, [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Restaurar", style: "destructive", onPress: () => { void (async () => {
+          setDataBusy(true);
+          try {
+            const recoveryName = await restoreFullBackup(db, preview);
+            Alert.alert("Backup restaurado", "Os dados anteriores foram guardados no aparelho.", [
+              { text: "Compartilhar cópia anterior", onPress: () => { void shareRecoveryBackup(recoveryName).then(() => router.replace("/")).catch((error: unknown) => Alert.alert("Não foi possível compartilhar", error instanceof Error ? error.message : "Tente novamente.")); } },
+              { text: "Concluir", onPress: () => router.replace("/") },
+            ]);
+          } catch (error) { Alert.alert("Não foi possível restaurar", error instanceof Error ? error.message : "Tente novamente."); }
+          finally { setDataBusy(false); }
+        })(); } },
+      ]);
+    } catch (error) { Alert.alert("Backup inválido", error instanceof Error ? error.message : "Não foi possível abrir o arquivo."); }
+    finally { setDataBusy(false); }
+  }
+
+  async function chooseCsv() {
+    setDataBusy(true);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
+      if (picked.canceled || !picked.assets[0]) return;
+      const preview = await inspectCsvFile(picked.assets[0].uri);
+      if (!preview.rows.length) { Alert.alert("CSV vazio", "Nenhum lançamento foi encontrado."); return; }
+      Alert.alert("Importar lançamentos?", `${preview.rows.length} lançamentos encontrados. Contas e categorias ausentes serão criadas. Linhas já importadas serão ignoradas.`, [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Importar", onPress: () => { void (async () => {
+          setDataBusy(true);
+          try {
+            const result = await importCsv(db, preview);
+            Alert.alert("Importação concluída", `${result.imported} lançamentos importados; ${result.skipped} já existentes.`, [
+              { text: "Ver lançamentos", onPress: () => router.replace("/transactions") },
+            ]);
+          } catch (error) { Alert.alert("Não foi possível importar", error instanceof Error ? error.message : "Tente novamente."); }
+          finally { setDataBusy(false); }
+        })(); } },
+      ]);
+    } catch (error) { Alert.alert("CSV inválido", error instanceof Error ? error.message : "Não foi possível abrir o arquivo."); }
+    finally { setDataBusy(false); }
   }
 
   function startTest() {
@@ -210,9 +270,24 @@ export default function SettingsScreen() {
 
           <View style={styles.sectionGap}><Label>Dados e privacidade</Label></View>
           <View style={[styles.rows, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Pressable accessibilityRole="button" onPress={() => void exportData()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void exportData()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.surfaceMuted }]}><Download color={colors.text} size={18} /></View>
               <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Exportar lançamentos</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Arquivo CSV para guardar ou analisar</Text></View>
+              <ChevronRight color={colors.textMuted} size={18} />
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void chooseCsv()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.surfaceMuted }]}><FileUp color={colors.text} size={18} /></View>
+              <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Importar CSV</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Adiciona lançamentos de um arquivo</Text></View>
+              <ChevronRight color={colors.textMuted} size={18} />
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void shareBackup()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.accentSoft }]}><Share2 color={colors.accent} size={18} /></View>
+              <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Backup completo</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Contas, categorias, lançamentos e planejamento</Text></View>
+              <ChevronRight color={colors.textMuted} size={18} />
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void chooseBackup()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.warningSoft }]}><RotateCcw color={colors.warning} size={18} /></View>
+              <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Restaurar backup</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Substitui os dados após confirmar o arquivo</Text></View>
               <ChevronRight color={colors.textMuted} size={18} />
             </Pressable>
             <View style={styles.dataRow}>
