@@ -4,6 +4,7 @@ import type { TransactionType } from "../types/category";
 import type { Transaction, TransactionDraft } from "../types/transaction";
 
 type TransactionRow = {
+  initial_loan_id: string | null;
   id: string;
   type: TransactionType;
   amount_cents: number;
@@ -28,6 +29,7 @@ type TransactionRow = {
 
 function mapTransaction(row: TransactionRow): Transaction {
   return {
+    initialLoanId: row.initial_loan_id ?? null,
     id: row.id,
     type: row.type,
     amountCents: row.amount_cents,
@@ -54,9 +56,10 @@ function mapTransaction(row: TransactionRow): Transaction {
 const selectBase = `
   SELECT t.id, t.type, t.amount_cents, t.category_id, c.name AS category_name,
     c.icon AS category_icon, t.description, t.occurred_at, t.created_at, t.updated_at,
-    t.account_id, a.name AS account_name, t.title, t.notes, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id
+    t.account_id, a.name AS account_name, t.title, t.notes, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id, il.id AS initial_loan_id
   FROM transactions t JOIN categories c ON c.id = t.category_id
   JOIN accounts a ON a.id = t.account_id
+  LEFT JOIN loans il ON il.initial_transaction_id = t.id
 `;
 
 export async function listTransactions(db: SQLiteDatabase, type?: TransactionType): Promise<Transaction[]> {
@@ -129,27 +132,37 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
 }
 
 export async function updateTransaction(db: SQLiteDatabase, id: string, draft: TransactionDraft): Promise<void> {
-  const existing = await db.getFirstAsync<{ kind: Transaction["kind"] }>("SELECT kind FROM transactions WHERE id = ?", id);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+  const existing = await tx.getFirstAsync<{ kind: Transaction["kind"]; amount_cents: number; title: string | null; notes: string | null; loan_id: string | null; goal_id: string | null; schedule_id: string | null; account_id: string; status: Transaction["status"] }>("SELECT kind, amount_cents, title, notes, loan_id, goal_id, schedule_id, account_id, status FROM transactions WHERE id = ?", id);
   if (!existing) throw new Error("Lançamento não encontrado.");
   if (existing.kind !== "standard" || (draft.kind && draft.kind !== "standard")) throw new Error("Transferências e correções não podem ser editadas como lançamentos comuns.");
-  await db.runAsync(
+  const loan = await tx.getFirstAsync<{ id: string; direction: "lent" | "borrowed"; principal_cents: number }>("SELECT id, direction, principal_cents FROM loans WHERE initial_transaction_id = ?", id);
+  if (loan) {
+    if ((draft.loanId === undefined ? existing.loan_id : draft.loanId) !== loan.id || draft.type !== (loan.direction === "lent" ? "expense" : "income") || (draft.status ?? existing.status) !== "paid") throw new Error("O desembolso inicial deve continuar pago, com o mesmo empréstimo e direção. Use os detalhes do empréstimo para compensar o saldo.");
+    const principal = loan.principal_cents + draft.amountCents - existing.amount_cents;
+    if (!Number.isSafeInteger(draft.amountCents) || draft.amountCents <= 0 || !Number.isSafeInteger(principal) || principal <= 0) throw new Error("O valor do desembolso deixaria a referência do empréstimo inválida.");
+    await tx.runAsync("UPDATE loans SET principal_cents = ?, updated_at = ? WHERE id = ?", principal, Date.now(), loan.id);
+    if (principal !== loan.principal_cents) await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('loan', ?, ?, ?)", loan.id, `loan_reference_adjusted:${loan.principal_cents}:${principal}`, Date.now());
+  }
+  await tx.runAsync(
     "UPDATE transactions SET type = ?, amount_cents = ?, category_id = ?, description = ?, occurred_at = ?, account_id = ?, title = ?, notes = ?, status = ?, kind = ?, goal_id = ?, loan_id = ?, schedule_id = ?, updated_at = ? WHERE id = ?",
     draft.type,
     draft.amountCents,
     draft.categoryId,
     draft.description?.trim() || null,
     draft.occurredAt,
-    draft.accountId ?? "principal",
-    draft.title?.trim() || draft.description?.trim() || null,
-    draft.notes?.trim() || null,
-    draft.status ?? "paid",
+    draft.accountId ?? existing.account_id,
+    draft.title === undefined ? existing.title : draft.title?.trim() || null,
+    draft.notes === undefined ? existing.notes : draft.notes?.trim() || null,
+    draft.status ?? existing.status,
     draft.kind ?? "standard",
-    draft.goalId ?? null,
-    draft.loanId ?? null,
-    draft.scheduleId ?? null,
+    draft.goalId === undefined ? existing.goal_id : draft.goalId,
+    draft.loanId === undefined ? existing.loan_id : draft.loanId,
+    draft.scheduleId === undefined ? existing.schedule_id : draft.scheduleId,
     Date.now(),
     id,
   );
+  });
 }
 
 export async function deleteTransaction(db: SQLiteDatabase, id: string): Promise<void> {

@@ -40,7 +40,7 @@ Motion permanece curto e respeita redução de movimento. Teclado, foco, máscar
 - Progresso considera somente lançamentos comuns pagos: transferências e correções ficam excluídas.
 - Pagamentos parciais, edição e exclusão de pagamentos, contribuições pendentes e contribuições de tipo diferente foram verificados com SQLite real em memória.
 - Formulário permite prazo opcional. Detalhes mostram prazo e oferecem recuperação de erro de carregamento, sem manter “Carregando…” indefinidamente.
-- Pendente: testar essas interações em dispositivo, implementar edição dos cadastros/compensação e revisar os efeitos de editar ou excluir o desembolso inicial.
+- Pendente: testar essas interações em dispositivo e revisar os efeitos de editar ou excluir o desembolso inicial. Edição e compensação foram implementadas na continuação local abaixo.
 
 ### Orçamentos — terceiro lote de 30/09/2026
 
@@ -54,7 +54,7 @@ Motion permanece curto e respeita redução de movimento. Teclado, foco, máscar
 - Início: conferir saldos, carregamento, erros, módulos e consistência com as demais telas.
 - Transações: cadastro/edição/exclusão, status, filtros, seleção múltipla, tags, duplicação e vínculos com metas/empréstimos.
 - Contas e categorias: arquivamento/restauração, correção de saldo, hierarquia e efeito sobre automações existentes.
-- Recorrências: edição, pausa/retomada, próximas ocorrências e efeito sobre lançamentos pendentes já gerados; revisar captura de atrasos acima do limite de 12 por atualização.
+- Recorrências: QA nativo da edição, pausa/retomada e ações; revisar captura de atrasos acima do limite de 12 por atualização e distinguir próximas transações já geradas do cursor de novas ocorrências.
 - Metas e empréstimos: validar criação, pagamentos parciais, edição de principal, compensação e consistência após exclusão de movimentos.
 - Orçamentos e análises: comparar filtros e ciclos com dados persistidos e testar todos os estados da UI.
 - Calendário: interação por dia, indicação de pendente/pago e navegação entre períodos.
@@ -70,3 +70,52 @@ Motion permanece curto e respeita redução de movimento. Teclado, foco, máscar
 - Export Android passou após as alterações finais de código (3.316 módulos; bundle Hermes gerado).
 - APK universal beta.2 compilado com sucesso; versão Android 16. O limite de caminhos do Ninja foi contornado com mapeamento temporário da pasta pai em T: e ajuste local CMake, descritos nas notas da release.
 - Lote preparado para a pré-release 1.2.0-beta.2; publicação remota deve ser conferida separadamente.
+
+## Continuação após a beta.2 — gerenciamento de recorrências (local)
+
+Não faz parte do APK beta.2 já publicado. A revisão integral permanece aberta.
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Tocar na recorrência só arquiva e ela desaparece | Toque abre edição; menu oferece pausa/retomada e exclusão da regra; inativas continuam na lista | Tornar gerenciamento e recuperação alcançáveis |
+| Efeito de arquivar sobre futuras ocorrências não é claro | Confirmação nomeia regra/valor e explica que lançamentos existentes permanecem | Tornar consequências visíveis antes da ação |
+| Não há escolha sobre ocorrências pendentes existentes | Opção desmarcada permite atualizar título, tipo, valor, conta e categoria somente de pendentes futuros | Preservar histórico pago e evitar mudanças financeiras implícitas |
+| Erros de cadastro podem parecer lista vazia | Estado de carregamento, erro e ação de tentar novamente | Evitar falso vazio e permitir recuperação |
+
+- Atualização é exclusiva e atômica; falha ao atualizar pendentes reverte também a configuração.
+- Datas existentes, notas, tags, pagos e pendentes vencidos são preservados. A data editada é a próxima **a gerar**, não move ocorrências existentes; a tela explica a diferença.
+- Uma regra inativa não é reativada ao editar. Retomada valida referências ativas e exige nova data para uma ocorrência única já gerada.
+- Excluir a regra mantém todas as transações e apenas remove seu vínculo; confirmação explícita na UI.
+- Esquema 4 armazena âncora de recorrência editável. Migração da versão 3 usa a primeira instância, inclusive quando sua transação foi excluída. Testes verificam preservação de valores, status e idempotência.
+- Inspeção aceita backups completos v3/v4 e rejeita versões futuras/estrutura incompleta. Restauração migra o banco importado isoladamente antes de copiar para o banco ativo; compartilhamento, cópia e recuperação precisam de prova nativa.
+- 55 testes, TypeScript e `git diff --check` passaram. Export Android passou após o último ajuste (3.317 módulos; bundle Hermes gerado).
+- Sem alvos em `adb devices` ou `emulator -list-avds`. Cliques, teclado, leitor de tela, aparência e restauração real continuam pendentes.
+
+## Continuação local — edição e compensação de metas/empréstimos
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Detalhes não oferecem edição | Formulário de nome, valor de referência/meta e prazo opcional | Permitir corrigir o cadastro sem reescrever movimentações |
+| Principal editado não afeta saldo calculado pelas movimentações | Ajuste pela diferença, com registro dos valores anterior e novo em Atividade | Tornar a correção de referência efetiva e rastreável |
+| Compensação existe apenas como coluna interna | Saldo desejado explícito, incluindo zero; mensagem explica que não é pagamento nem movimentação de conta | Permitir regularização manual sem inventar fluxo de caixa |
+| Arquivados desaparecem sem caminho de recuperação | Cadastros mostram status e detalhes permitem restaurar | Preservar histórico e tornar arquivamento reversível |
+| Progresso do empréstimo diz “Quitado” mesmo com compensação | “Redução do saldo” e “Saldo zerado” | Não confundir ajuste administrativo com pagamento |
+| Atividade só resolve entidades de transações | Ajustes mostram empréstimo e valores anterior/novo; erro tem recuperação | Exibir um registro legível, não códigos internos |
+
+- Atualizações de referência e compensação são exclusivas e atômicas com o registro de atividade; falha no registro reverte o saldo/cadastro.
+- Pagos e pendentes, valores de transações, contas, notas e datas permanecem inalterados. Pagamentos posteriores reduzem o saldo já compensado.
+- Quando não há movimentações sobreviventes, o principal novo entra uma só vez na base; teste cobre esse ramo.
+- Natureza da meta e direção do empréstimo permanecem as definidas na criação; alteração desses campos e exclusão definitiva dos cadastros ainda não estão implementadas.
+- Campo monetário compartilhado deixa de converter entrada inválida/excessiva silenciosamente em zero. O editor identifica valores por rótulos acessíveis; erros preservam o formulário.
+- 63 testes, TypeScript e `git diff --check` passaram. Export Android aprovado após o último ajuste (3.318 módulos; bundle Hermes gerado).
+- Mudanças locais, não publicadas em nova release. QA nativo e tratamento seguro de edição/exclusão do desembolso inicial legado permanecem pendentes; nenhum vínculo inicial foi inferido por nome, data ou valor.
+
+## Lote beta.3 — desembolso inicial e edição de lançamentos
+
+- Esquema 5 identifica o desembolso de empréstimos novos; migração mantém legados sem classificação. Identificação manual valida direção, status e vínculo, preservando saldo bruto, compensações e movimentações.
+- Excluir o desembolso identificado remove a movimentação da conta, não a dívida. Editar seu valor ajusta a referência pela diferença, com rollback conjunto e registro de atividade.
+- UI explica consequências e permite identificar/revisar o vínculo. Desembolso identificado deve permanecer pago, na mesma direção e empréstimo.
+- Edição de lançamentos preserva metadados omitidos e horário ao mudar apenas a data; falha de feedback tátil não transforma uma gravação bem-sucedida em erro financeiro.
+- Backups aceitos: v3/v4/v5; downgrade após migração não é suportado. A restauração nativa continua pendente de prova em dispositivo.
+- Os lotes descritos acima como locais são incluídos nesta preparação da beta.3. Publicação e APK devem ser conferidos separadamente.
+- 72 testes automatizados, TypeScript e exportação Android passaram na preparação da beta.3 (3.318 módulos; bundle Hermes). Crédito excedente após identificação manual e mudança de data sem perda de horário têm testes dedicados.

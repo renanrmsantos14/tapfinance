@@ -3,7 +3,7 @@ import { TextInput, StyleSheet } from "react-native";
 import { formatInputCents, parseCurrencyToCents } from "../utils/currency";
 import { useAppColors } from "../theme";
 
-export function CurrencyInput({ value, onChange, autoFocus = false }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean }) {
+export function CurrencyInput({ value, onChange, autoFocus = false, accessibilityLabel = "Valor" }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean; accessibilityLabel?: string }) {
   const colors = useAppColors();
   const ref = useRef<TextInput>(null);
   useEffect(() => {
@@ -13,13 +13,15 @@ export function CurrencyInput({ value, onChange, autoFocus = false }: { value: n
   return (
     <TextInput
       ref={ref}
-      accessibilityLabel="Valor"
+      accessibilityLabel={accessibilityLabel}
       autoFocus={autoFocus}
       keyboardType="number-pad"
       value={formatInputCents(value)}
       onChangeText={(text) => {
-        const parsed = parseCurrencyToCents(text.replace(/\D/g, ""));
-        onChange(parsed ?? 0);
+        const digits = text.replace(/\D/g, "");
+        if (!digits) { onChange(0); return; }
+        const parsed = parseCurrencyToCents(digits);
+        if (parsed !== null) onChange(parsed);
       }}
       selectTextOnFocus={false}
       placeholder="R$ 0,00"

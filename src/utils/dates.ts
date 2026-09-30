@@ -25,6 +25,15 @@ export function formatShortDate(timestamp: number): string {
   }).format(new Date(timestamp)).replace(".", "");
 }
 
+export function replaceDateKeepingTime(timestamp: number, value: string): number | null {
+  const parsed = parseDateInput(value);
+  const original = new Date(timestamp);
+  if (parsed === null || !Number.isFinite(original.getTime())) return null;
+  const date = new Date(parsed);
+  date.setHours(original.getHours(), original.getMinutes(), original.getSeconds(), original.getMilliseconds());
+  return date.getTime();
+}
+
 export function formatMonthLabel(timestamp: number): string {
   return new Intl.DateTimeFormat("pt-BR", { month: "long" })
     .format(new Date(timestamp))

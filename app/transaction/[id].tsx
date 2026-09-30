@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ArrowLeft, Check, Trash2 } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -13,7 +13,7 @@ import { deleteTransaction, getTransaction, updateTransaction } from "../../src/
 import type { Category, TransactionType } from "../../src/types/category";
 import type { Transaction } from "../../src/types/transaction";
 import { radius, useAppColors } from "../../src/theme";
-import { formatDate, parseDateInput } from "../../src/utils/dates";
+import { formatDate, replaceDateKeepingTime } from "../../src/utils/dates";
 import { formatCentsToBRL } from "../../src/utils/currency";
 import { validateTransactionDraft } from "../../src/utils/validation";
 import { listAccounts } from "../../src/repositories/financeRepository";
@@ -27,6 +27,7 @@ export default function TransactionDetailScreen() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [type, setType] = useState<TransactionType>("expense");
   const [amountCents, setAmountCents] = useState(0);
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -69,34 +70,41 @@ export default function TransactionDetailScreen() {
   useEffect(() => { void listAccounts(db).then(setAccounts); }, [db]);
 
   const save = useCallback(async () => {
-    if (saving) return;
-    const parsedDate = parseDateInput(occurredAtText);
+    if (savingRef.current || !transaction) return;
+    const parsedDate = replaceDateKeepingTime(transaction.occurredAt, occurredAtText);
     if (parsedDate === null) {
       Alert.alert("Confira a data", "Use o formato DD/MM/AAAA.");
       return;
     }
-    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId, loanId, scheduleId, status, description, title: description, occurredAt: parsedDate };
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId, loanId, scheduleId, status, description, notes: transaction.notes, title: description === (transaction.description ?? "") ? transaction.title : description, occurredAt: parsedDate };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
       return;
     }
-    setSaving(true);
+    savingRef.current = true; setSaving(true);
     try {
       await updateTransaction(db, id, draft);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       router.back();
-    } catch {
-      Alert.alert("Não foi possível salvar", "Tente novamente.");
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente.");
     } finally {
-      setSaving(false);
+      savingRef.current = false; setSaving(false);
     }
-  }, [accountId, amountCents, categoryId, db, description, goalId, id, loanId, occurredAtText, saving, scheduleId, status, type]);
+  }, [accountId, amountCents, categoryId, db, description, goalId, id, loanId, occurredAtText, scheduleId, status, transaction, type]);
 
   function confirmDelete() {
-    Alert.alert(transaction?.kind === "transfer" ? "Excluir transferência?" : "Excluir lançamento?", transaction?.kind === "transfer" ? "As duas movimentações vinculadas serão excluídas. Essa ação não pode ser desfeita." : "Essa ação não pode ser desfeita.", [
+    if (savingRef.current) return;
+    Alert.alert(transaction?.kind === "transfer" ? "Excluir transferência?" : "Excluir lançamento?", `${transaction?.title || transaction?.description || "Lançamento"} · ${formatCentsToBRL(transaction?.amountCents ?? 0)} · ${transaction?.status === "paid" ? "Pago" : "Pendente"}. ${transaction?.kind === "transfer" ? "As duas movimentações vinculadas serão excluídas." : transaction?.initialLoanId ? "Este é o desembolso inicial. Excluir altera a movimentação da conta, mas não apaga nem quita a dívida do empréstimo." : "A movimentação será removida da conta."} Essa ação não pode ser desfeita.`, [
       { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: () => { void deleteTransaction(db, id).then(() => router.back()).catch(() => Alert.alert("Não foi possível excluir", "Tente novamente.")); } },
+      { text: "Excluir", style: "destructive", onPress: () => { void (async () => {
+        if (savingRef.current) return;
+        savingRef.current = true; setSaving(true);
+        try { await deleteTransaction(db, id); router.back(); }
+        catch (error) { Alert.alert("Não foi possível excluir", error instanceof Error ? error.message : "Tente novamente."); }
+        finally { savingRef.current = false; setSaving(false); }
+      })(); } },
     ]);
   }
 
@@ -138,11 +146,13 @@ export default function TransactionDetailScreen() {
             <View style={styles.topSpacer} accessibilityElementsHidden />
           </View>
 
+          {transaction.initialLoanId && <Text style={[styles.specialNote, { color: colors.textMuted }]}>Desembolso inicial do empréstimo. Alterar o valor ajusta a referência pela diferença; pagamentos e compensações são preservados. Direção, vínculo e situação paga permanecem fixos.</Text>}
+
           <View accessibilityRole="tablist" style={[styles.typeSwitch, { backgroundColor: colors.surfaceMuted }]}>
             {(["expense", "income"] as const).map((item) => {
               const selected = type === item;
               return (
-                <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => setType(item)} style={({ pressed }) => [styles.typeButton, { backgroundColor: selected ? colors.surface : "transparent", borderColor: selected ? colors.border : "transparent", opacity: pressed ? 0.7 : 1 }]}>
+                <Pressable key={item} accessibilityRole="tab" disabled={saving || !!transaction.initialLoanId} accessibilityState={{ selected, disabled: saving || !!transaction.initialLoanId }} onPress={() => setType(item)} style={({ pressed }) => [styles.typeButton, { backgroundColor: selected ? colors.surface : "transparent", borderColor: selected ? colors.border : "transparent", opacity: saving || (!!transaction.initialLoanId && !selected) ? 0.45 : pressed ? 0.7 : 1 }]}>
                   <Text style={[styles.typeText, { color: selected ? colors.text : colors.textMuted }]}>{item === "expense" ? "Despesa" : "Receita"}</Text>
                 </Pressable>
               );
@@ -154,7 +164,7 @@ export default function TransactionDetailScreen() {
             <CurrencyInput value={amountCents} onChange={setAmountCents} />
           </View>
 
-          <View style={[styles.statusSwitch, { backgroundColor: colors.surfaceMuted }]}>{(["paid", "pending"] as const).map((item) => <Pressable key={item} accessibilityRole="radio" accessibilityState={{ selected: status === item }} onPress={() => setStatus(item)} style={[styles.statusOption, { borderColor: status === item ? colors.border : "transparent", backgroundColor: status === item ? colors.surface : "transparent" }]}><Text style={{ color: status === item ? colors.text : colors.textMuted, fontSize: 13, fontWeight: "700" }}>{item === "paid" ? "Pago" : "Pendente"}</Text></Pressable>)}</View>
+          <View style={[styles.statusSwitch, { backgroundColor: colors.surfaceMuted }]}>{(["paid", "pending"] as const).map((item) => <Pressable key={item} accessibilityRole="radio" disabled={saving || !!transaction.initialLoanId} accessibilityState={{ selected: status === item, disabled: saving || !!transaction.initialLoanId }} onPress={() => setStatus(item)} style={[styles.statusOption, { borderColor: status === item ? colors.border : "transparent", backgroundColor: status === item ? colors.surface : "transparent", opacity: saving || (!!transaction.initialLoanId && item !== "paid") ? 0.45 : 1 }]}><Text style={{ color: status === item ? colors.text : colors.textMuted, fontSize: 13, fontWeight: "700" }}>{item === "paid" ? "Pago" : "Pendente"}</Text></Pressable>)}</View>
 
           <View style={styles.rowFields}>
             <View style={styles.field}>

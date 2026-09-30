@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { SQLiteDatabase } from "expo-sqlite";
-import { initializeDatabase } from "../src/database/database";
+import { CURRENT_SCHEMA_VERSION, initializeDatabase } from "../src/database/database";
 
 function adapter(sqlite: DatabaseSync): SQLiteDatabase {
   const database = {
@@ -26,7 +26,7 @@ test("fresh database initializes current schema and seeds", async () => {
   const sqlite = new DatabaseSync(":memory:");
   try {
     await initializeDatabase(adapter(sqlite));
-    assert.equal((sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 3);
+    assert.equal((sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, CURRENT_SCHEMA_VERSION);
     assert.equal((sqlite.prepare("SELECT COUNT(*) AS count FROM accounts").get() as { count: number }).count, 1);
     assert.equal((sqlite.prepare("SELECT COUNT(*) AS count FROM categories").get() as { count: number }).count, 13);
     for (const table of ["budgets", "goals", "loans", "schedules", "schedule_instances", "activity_log"]) {
@@ -51,6 +51,6 @@ test("v2 migration preserves an existing transaction and maps it to primary acco
     assert.equal(row.account_id, "principal");
     assert.equal(row.amount_cents, 1234);
     assert.equal(row.description, "Preservar");
-    assert.equal((sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, 3);
+    assert.equal((sqlite.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number }).version, CURRENT_SCHEMA_VERSION);
   } finally { sqlite.close(); }
 });

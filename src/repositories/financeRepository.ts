@@ -224,12 +224,12 @@ export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: s
   return { budget: { ...budget, startAt: period.start, endAt: period.end, spentCents: spent?.amountCents ?? 0 }, categories: visible, hasPrevious };
 }
 
-export async function listGoals(db: SQLiteDatabase): Promise<Goal[]> {
+export async function listGoals(db: SQLiteDatabase, includeArchived = false): Promise<Goal[]> {
   const rows = await db.getAllAsync<{ id: string; name: string; type: "income" | "expense"; target_cents: number; color: string; due_at: number | null; is_archived: number; progress_cents: number }>(`
     SELECT g.id, g.name, g.type, g.target_cents, g.color, g.due_at, g.is_archived,
       COALESCE(SUM(CASE WHEN t.type = g.type AND t.status = 'paid' AND t.kind = 'standard' THEN t.amount_cents ELSE 0 END), 0) AS progress_cents
-    FROM goals g LEFT JOIN transactions t ON t.goal_id = g.id WHERE g.is_archived = 0 GROUP BY g.id ORDER BY g.created_at
-  `);
+    FROM goals g LEFT JOIN transactions t ON t.goal_id = g.id WHERE (? = 1 OR g.is_archived = 0) GROUP BY g.id ORDER BY g.is_archived, g.created_at
+  `, includeArchived ? 1 : 0);
   return rows.map((r) => ({ id: r.id, name: r.name, type: r.type, targetCents: r.target_cents, progressCents: r.progress_cents, color: r.color, dueAt: r.due_at, isArchived: r.is_archived === 1 }));
 }
 
@@ -242,14 +242,19 @@ export async function createGoal(db: SQLiteDatabase, input: { name: string; type
   return id;
 }
 
-export async function listLoans(db: SQLiteDatabase): Promise<Loan[]> {
-  const rows = await db.getAllAsync<{ id: string; name: string; direction: "lent" | "borrowed"; principal_cents: number; offset_cents: number; color: string; due_at: number | null; is_archived: number; movement_cents: number; movements: number }>(`
-    SELECT l.id, l.name, l.direction, l.principal_cents, l.offset_cents, l.color, l.due_at, l.is_archived,
+export async function listLoans(db: SQLiteDatabase, includeArchived = false): Promise<Loan[]> {
+  const rows = await db.getAllAsync<{ id: string; name: string; direction: "lent" | "borrowed"; principal_cents: number; offset_cents: number; color: string; due_at: number | null; is_archived: number; initial_transaction_id: string | null; movement_cents: number; movements: number }>(`
+    SELECT l.id, l.name, l.direction, l.principal_cents, l.offset_cents, l.color, l.due_at, l.is_archived, l.initial_transaction_id,
       COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount_cents ELSE -t.amount_cents END), 0) AS movement_cents,
       COUNT(t.id) AS movements
-    FROM loans l LEFT JOIN transactions t ON t.loan_id = l.id AND t.status = 'paid' AND t.kind = 'standard' WHERE l.is_archived = 0 GROUP BY l.id ORDER BY l.created_at
-  `);
-  return rows.map((r) => ({ id: r.id, name: r.name, direction: r.direction, principalCents: r.principal_cents, remainingCents: Math.max(0, (r.movements === 0 ? r.principal_cents : r.direction === "lent" ? -r.movement_cents : r.movement_cents) + r.offset_cents), color: r.color, dueAt: r.due_at, isArchived: r.is_archived === 1 }));
+    FROM loans l LEFT JOIN transactions t ON t.loan_id = l.id AND t.status = 'paid' AND t.kind = 'standard' AND (l.initial_transaction_id IS NULL OR t.id != l.initial_transaction_id) WHERE (? = 1 OR l.is_archived = 0) GROUP BY l.id ORDER BY l.is_archived, l.created_at
+  `, includeArchived ? 1 : 0);
+  return rows.map((r) => ({ id: r.id, name: r.name, direction: r.direction, principalCents: r.principal_cents, remainingCents: Math.max(0, loanBalanceBase(r) + r.offset_cents), initialTransactionId: r.initial_transaction_id, color: r.color, dueAt: r.due_at, isArchived: r.is_archived === 1 }));
+}
+
+function loanBalanceBase(row: { direction: Loan["direction"]; principal_cents: number; initial_transaction_id: string | null; movements: number; movement_cents: number }): number {
+  const movement = row.direction === "lent" ? -row.movement_cents : row.movement_cents;
+  return row.initial_transaction_id !== null ? row.principal_cents + movement : row.movements === 0 ? row.principal_cents : movement;
 }
 
 export async function createLoan(db: SQLiteDatabase, input: { name: string; direction: Loan["direction"]; principalCents: number; color: string; accountId?: string; dueAt?: number | null }): Promise<string> {
@@ -264,7 +269,7 @@ export async function createLoan(db: SQLiteDatabase, input: { name: string; dire
       ? await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", input.accountId)
       : await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY is_primary DESC, position, created_at LIMIT 1");
     if (!account) throw new Error("Selecione uma conta ativa para o empréstimo.");
-    await tx.runAsync("INSERT INTO loans (id, name, direction, principal_cents, color, due_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, input.name.trim(), input.direction, input.principalCents, input.color, input.dueAt ?? null, now, now);
+    await tx.runAsync("INSERT INTO loans (id, name, direction, principal_cents, color, due_at, created_at, updated_at, initial_transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, input.name.trim(), input.direction, input.principalCents, input.color, input.dueAt ?? null, now, now, transactionId);
     await tx.runAsync(
       `INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, account_id, title, status, kind, loan_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'standard', ?)`,
@@ -274,26 +279,143 @@ export async function createLoan(db: SQLiteDatabase, input: { name: string; dire
   return id;
 }
 
-export async function listSchedules(db: SQLiteDatabase): Promise<Schedule[]> {
+type TrackerConfiguration = { name: string; color: string; dueAt: number | null };
+
+function validateTrackerConfiguration(input: TrackerConfiguration, amount: number): void {
+  if (!input.name.trim()) throw new Error("Informe um nome.");
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error("Informe um valor válido maior que zero.");
+  if (input.dueAt !== null && (!Number.isSafeInteger(input.dueAt) || !Number.isFinite(new Date(input.dueAt).getTime()))) throw new Error("Informe uma data válida.");
+}
+
+export async function updateGoal(db: SQLiteDatabase, id: string, input: TrackerConfiguration & { targetCents: number }): Promise<void> {
+  validateTrackerConfiguration(input, input.targetCents);
+  const result = await db.runAsync("UPDATE goals SET name = ?, target_cents = ?, color = ?, due_at = ?, updated_at = ? WHERE id = ?", input.name.trim(), input.targetCents, input.color, input.dueAt, Date.now(), id);
+  if (!result.changes) throw new Error("Meta não encontrada.");
+}
+
+async function getLoanBalance(db: SQLiteDatabase, id: string) {
+  const row = await db.getFirstAsync<{ principal_cents: number; offset_cents: number; direction: Loan["direction"]; initial_transaction_id: string | null; movement_cents: number; movements: number }>(`
+    SELECT l.principal_cents, l.offset_cents, l.direction, l.initial_transaction_id,
+      COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount_cents ELSE -t.amount_cents END), 0) AS movement_cents, COUNT(t.id) AS movements
+    FROM loans l LEFT JOIN transactions t ON t.loan_id = l.id AND t.status = 'paid' AND t.kind = 'standard' AND (l.initial_transaction_id IS NULL OR t.id != l.initial_transaction_id) WHERE l.id = ? GROUP BY l.id`, id);
+  if (!row) throw new Error("Empréstimo não encontrado.");
+  const base = loanBalanceBase(row);
+  return { ...row, base, remaining: Math.max(0, base + row.offset_cents) };
+}
+
+export async function updateLoan(db: SQLiteDatabase, id: string, input: TrackerConfiguration & { principalCents: number }): Promise<void> {
+  validateTrackerConfiguration(input, input.principalCents);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await getLoanBalance(tx, id);
+    const delta = input.principalCents - current.principal_cents;
+    const legacyMovements = current.initial_transaction_id === null && current.movements > 0;
+    const offset = current.offset_cents + (legacyMovements ? delta : 0);
+    const base = legacyMovements ? current.base : current.base + delta;
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(base + offset)) throw new Error("Ajuste excede o limite de saldo suportado.");
+    await tx.runAsync("UPDATE loans SET name = ?, principal_cents = ?, offset_cents = ?, color = ?, due_at = ?, updated_at = ? WHERE id = ?", input.name.trim(), input.principalCents, offset, input.color, input.dueAt, Date.now(), id);
+    if (delta !== 0) await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('loan', ?, ?, ?)", id, `loan_reference_adjusted:${current.principal_cents}:${input.principalCents}`, Date.now());
+  });
+}
+
+export async function setLoanRemainingBalance(db: SQLiteDatabase, id: string, remainingCents: number): Promise<void> {
+  if (!Number.isSafeInteger(remainingCents) || remainingCents < 0) throw new Error("Informe um saldo válido igual ou maior que zero.");
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await getLoanBalance(tx, id);
+    const offset = remainingCents - current.base;
+    if (!Number.isSafeInteger(offset)) throw new Error("Compensação excede o limite de saldo suportado.");
+    await tx.runAsync("UPDATE loans SET offset_cents = ?, updated_at = ? WHERE id = ?", offset, Date.now(), id);
+    await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('loan', ?, ?, ?)", id, `loan_balance_adjusted:${current.remaining}:${remainingCents}`, Date.now());
+  });
+}
+
+export async function setTrackerArchived(db: SQLiteDatabase, kind: "goals" | "loans", id: string, archived: boolean): Promise<void> {
+  const result = await db.runAsync(`UPDATE ${kind === "loans" ? "loans" : "goals"} SET is_archived = ?, updated_at = ? WHERE id = ?`, archived ? 1 : 0, Date.now(), id);
+  if (!result.changes) throw new Error("Item não encontrado.");
+}
+
+export async function setLoanInitialTransaction(db: SQLiteDatabase, id: string, transactionId: string): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await getLoanBalance(tx, id);
+    const movement = await tx.getFirstAsync<{ type: string; status: string; kind: string; loan_id: string | null }>("SELECT type, status, kind, loan_id FROM transactions WHERE id = ?", transactionId);
+    if (!movement || movement.loan_id !== id || movement.status !== "paid" || movement.kind !== "standard" || movement.type !== (current.direction === "lent" ? "expense" : "income")) throw new Error("Selecione um desembolso pago e vinculado a este empréstimo, com a direção correta.");
+    if (current.initial_transaction_id === transactionId) return;
+    await tx.runAsync("UPDATE loans SET initial_transaction_id = ? WHERE id = ?", transactionId, id);
+    const updated = await getLoanBalance(tx, id);
+    const offset = current.base + current.offset_cents - updated.base;
+    if (!Number.isSafeInteger(offset)) throw new Error("Vínculo excede o limite de saldo suportado.");
+    await tx.runAsync("UPDATE loans SET offset_cents = ?, updated_at = ? WHERE id = ?", offset, Date.now(), id);
+    await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('loan', ?, ?, ?)", id, `loan_disbursement_linked:${current.initial_transaction_id ?? ""}:${transactionId}`, Date.now());
+  });
+}
+
+export async function listSchedules(db: SQLiteDatabase, includeInactive = false): Promise<Schedule[]> {
   const rows = await db.getAllAsync<{ id: string; title: string; type: "expense" | "income"; amount_cents: number; account_id: string; category_id: string; frequency: Schedule["frequency"]; next_at: number; is_subscription: number; is_active: number }>(
-    "SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, is_active FROM schedules WHERE is_active = 1 ORDER BY next_at",
+    "SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, is_active FROM schedules WHERE (? = 1 OR is_active = 1) ORDER BY is_active DESC, next_at", includeInactive ? 1 : 0,
   );
   return rows.map((r) => ({ id: r.id, title: r.title, type: r.type, amountCents: r.amount_cents, accountId: r.account_id, categoryId: r.category_id, frequency: r.frequency, nextAt: r.next_at, isSubscription: r.is_subscription === 1, isActive: r.is_active === 1 }));
 }
 
-export async function createSchedule(db: SQLiteDatabase, input: Omit<Schedule, "id" | "isActive">): Promise<string> {
+type ScheduleInput = Omit<Schedule, "id" | "isActive">;
+
+function validateSchedule(input: ScheduleInput): void {
   if (!input.title.trim()) throw new Error("Informe o nome da recorrência.");
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe um valor válido maior que zero.");
   if (!Number.isSafeInteger(input.nextAt) || !Number.isFinite(new Date(input.nextAt).getTime())) throw new Error("Informe uma data válida.");
+  if (!["once", "weekly", "monthly", "yearly"].includes(input.frequency)) throw new Error("Frequência inválida.");
+}
+
+async function validateScheduleReferences(db: SQLiteDatabase, input: Pick<ScheduleInput, "accountId" | "categoryId" | "type">): Promise<void> {
+  const account = await db.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", input.accountId);
+  if (!account) throw new Error("Selecione uma conta ativa.");
+  const category = await db.getFirstAsync<{ id: string }>("SELECT id FROM categories WHERE id = ? AND type = ? AND is_active = 1", input.categoryId, input.type);
+  if (!category) throw new Error("Selecione uma categoria ativa compatível com o tipo de lançamento.");
+}
+
+export async function createSchedule(db: SQLiteDatabase, input: ScheduleInput): Promise<string> {
+  validateSchedule(input);
   const id = createId(); const now = Date.now();
   await db.withExclusiveTransactionAsync(async (tx) => {
-    const account = await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", input.accountId);
-    if (!account) throw new Error("Selecione uma conta ativa.");
-    const category = await tx.getFirstAsync<{ id: string }>("SELECT id FROM categories WHERE id = ? AND type = ? AND is_active = 1", input.categoryId, input.type);
-    if (!category) throw new Error("Selecione uma categoria ativa compatível com o tipo de lançamento.");
-    await tx.runAsync("INSERT INTO schedules (id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, input.frequency, input.nextAt, input.isSubscription ? 1 : 0, now, now);
+    await validateScheduleReferences(tx, input);
+    await tx.runAsync("INSERT INTO schedules (id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, created_at, updated_at, anchor_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, input.frequency, input.nextAt, input.isSubscription ? 1 : 0, now, now, input.nextAt);
   });
   return id;
+}
+
+export async function updateSchedule(db: SQLiteDatabase, id: string, input: ScheduleInput, options: { updateFuturePending?: boolean; now?: number } = {}): Promise<void> {
+  validateSchedule(input);
+  const now = options.now ?? Date.now();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const existing = await tx.getFirstAsync<{ next_at: number; frequency: Schedule["frequency"]; anchor_at: number }>("SELECT next_at, frequency, anchor_at FROM schedules WHERE id = ?", id);
+    if (!existing) throw new Error("Recorrência não encontrada.");
+    await validateScheduleReferences(tx, input);
+    const anchor = existing.next_at !== input.nextAt || existing.frequency !== input.frequency ? input.nextAt : existing.anchor_at;
+    await tx.runAsync("UPDATE schedules SET title = ?, type = ?, amount_cents = ?, account_id = ?, category_id = ?, frequency = ?, next_at = ?, is_subscription = ?, anchor_at = ?, updated_at = ? WHERE id = ?",
+      input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, input.frequency, input.nextAt, input.isSubscription ? 1 : 0, anchor, now, id);
+    if (options.updateFuturePending) {
+      await tx.runAsync("UPDATE transactions SET title = ?, description = ?, type = ?, amount_cents = ?, account_id = ?, category_id = ?, updated_at = ? WHERE schedule_id = ? AND status = 'pending' AND kind = 'standard' AND occurred_at >= ?",
+        input.title.trim(), input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, now, id, now);
+    }
+  });
+}
+
+export async function setScheduleActive(db: SQLiteDatabase, id: string, active: boolean): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const schedule = await tx.getFirstAsync<{ frequency: Schedule["frequency"]; next_at: number; account_id: string; category_id: string; type: Schedule["type"] }>("SELECT frequency, next_at, account_id, category_id, type FROM schedules WHERE id = ?", id);
+    if (!schedule) throw new Error("Recorrência não encontrada.");
+    if (active) {
+      await validateScheduleReferences(tx, { accountId: schedule.account_id, categoryId: schedule.category_id, type: schedule.type });
+      if (schedule.frequency === "once" && await tx.getFirstAsync("SELECT transaction_id FROM schedule_instances WHERE schedule_id = ? AND scheduled_for = ?", id, schedule.next_at)) throw new Error("Edite a data antes de reativar uma ocorrência única já gerada.");
+    }
+    await tx.runAsync("UPDATE schedules SET is_active = ?, updated_at = ? WHERE id = ?", active ? 1 : 0, Date.now(), id);
+  });
+}
+
+export async function deleteSchedule(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync("UPDATE transactions SET schedule_id = NULL, updated_at = ? WHERE schedule_id = ?", Date.now(), id);
+    await tx.runAsync("DELETE FROM schedule_instances WHERE schedule_id = ?", id);
+    await tx.runAsync("DELETE FROM schedules WHERE id = ?", id);
+  });
 }
 
 function addFrequency(timestamp: number, frequency: Schedule["frequency"], anchor: number) {
@@ -329,8 +451,8 @@ async function materializeSchedules(db: SQLiteDatabase, now: number): Promise<vo
     await db.withExclusiveTransactionAsync(async (tx) => {
       const schedule = await tx.getFirstAsync<typeof candidate>("SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at FROM schedules WHERE id = ? AND is_active = 1", candidate.id);
       if (!schedule) return;
-      const first = await tx.getFirstAsync<{ anchor: number | null }>("SELECT MIN(scheduled_for) AS anchor FROM schedule_instances WHERE schedule_id = ?", schedule.id);
-      const anchor = first?.anchor ?? schedule.next_at;
+      const stored = await tx.getFirstAsync<{ anchor_at: number | null }>("SELECT anchor_at FROM schedules WHERE id = ?", schedule.id);
+      const anchor = stored?.anchor_at ?? schedule.next_at;
       let nextAt = schedule.next_at; let created = 0;
       while (nextAt <= until && created < 12) {
         const exists = await tx.getFirstAsync<{ transaction_id: string }>("SELECT transaction_id FROM schedule_instances WHERE schedule_id = ? AND scheduled_for = ?", schedule.id, nextAt);

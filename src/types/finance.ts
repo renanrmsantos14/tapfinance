@@ -44,6 +44,7 @@ export type Loan = {
   direction: "lent" | "borrowed";
   principalCents: number;
   remainingCents: number;
+  initialTransactionId: string | null;
   color: string;
   dueAt: number | null;
   isArchived: boolean;
