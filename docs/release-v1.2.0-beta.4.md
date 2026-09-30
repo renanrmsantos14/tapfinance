@@ -13,7 +13,9 @@ Pré-release de integridade e recuperação dos formulários. Android versionCod
 
 ## Validação e limites
 
-- 89 testes automatizados passaram, sem falhas; TypeScript aprovado. Verificação de bundle e APK registrada após a compilação.
+- 89 testes automatizados passaram, sem falhas; TypeScript e exportação Android aprovados (3.321 módulos, bundle Hermes).
+- APK universal compilado com sucesso em 6m30s. Assinatura v2 válida; versionCode 18, versionName 1.2.0-beta.4 e arquiteturas arm64-v8a, armeabi-v7a, x86 e x86_64 conferidos.
+- Artefato `app-release.apk`: 112.891.493 bytes. SHA-256: `e79ee6128dfb48b82f4b4f869fa7d7008804a8e2a4001e29eabcd78edc2aa1fc`.
 - Faça backup antes de atualizar. Esquema 5 não suporta downgrade para aplicativos antigos.
 - APK de avaliação mantém a chave debug existente; não é uma assinatura de produção para Play Store.
 - Sem dispositivo/emulador disponível: aparência, teclado, leitor de tela, navegação, restauração real, Assistente e notificações continuam pendentes de QA nativo.

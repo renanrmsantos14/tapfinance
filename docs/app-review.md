@@ -151,4 +151,5 @@ Não faz parte do APK beta.3 publicado. Revisão integral permanece aberta.
 
 - 89 testes automatizados passaram e TypeScript aprovado. Novos testes usam SQLite real para preservação de referências, recuperação da consulta e pré-preenchimento; não são prova de execução do hook ou interação nativa.
 - Lotes locais posteriores à beta.3 são incluídos na preparação da beta.4, versionCode 18. Banco permanece no esquema 5; não há reescrita de dados antigos.
+- Exportação Android aprovada com 3.321 módulos; APK universal compilado em 6m30s, assinatura v2, versão 18/beta.4 e quatro arquiteturas verificadas. Tamanho e SHA-256 registrados nas notas da release.
 - QA nativo de foco, teclado, leitor de tela, falhas de consulta e criação/retorno de cadastros permanece pendente. Revisão integral e fidelidade ao Cashew seguem abertas.
