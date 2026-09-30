@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { createId } from "../database/ids";
 import type { TransactionType } from "../types/category";
 import type { Transaction, TransactionDraft } from "../types/transaction";
+import { validateTransactionDraft } from "../utils/validation";
 
 type TransactionRow = {
   initial_loan_id: string | null;
@@ -100,10 +101,42 @@ export async function suggestCategoryFromHistory(db: SQLiteDatabase, type: Trans
   return matches[0]?.uses >= requiredUses && matches[0].uses > (matches[1]?.uses ?? 0) ? matches[0].category_id : null;
 }
 
+type ExistingReferences = { account_id: string; category_id: string; type: TransactionType; goal_id: string | null; loan_id: string | null; schedule_id: string | null };
+
+async function validateTransactionReferences(db: SQLiteDatabase, draft: TransactionDraft, previous?: ExistingReferences): Promise<string> {
+  const error = validateTransactionDraft(draft);
+  if (error) throw new Error(error);
+  const accountId = draft.accountId ?? previous?.account_id ?? (await db.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY is_primary DESC, position, created_at LIMIT 1"))?.id;
+  if (!accountId) throw new Error("Selecione uma conta ativa.");
+  const account = await db.getFirstAsync<{ is_archived: number }>("SELECT is_archived FROM accounts WHERE id = ?", accountId);
+  if (!account || (account.is_archived === 1 && accountId !== previous?.account_id)) throw new Error("Selecione uma conta ativa.");
+  const category = await db.getFirstAsync<{ type: TransactionType; is_active: number }>("SELECT type, is_active FROM categories WHERE id = ?", draft.categoryId);
+  const historicalCategory = draft.categoryId === previous?.category_id && draft.type === previous?.type;
+  if (!category || category.type !== draft.type || (category.is_active !== 1 && !historicalCategory)) throw new Error("Selecione uma categoria ativa compatível com receita ou despesa.");
+  const links = [
+    { id: draft.goalId === undefined ? previous?.goal_id : draft.goalId, previous: previous?.goal_id, sql: "SELECT is_archived AS unavailable FROM goals WHERE id = ?", label: "meta" },
+    { id: draft.loanId === undefined ? previous?.loan_id : draft.loanId, previous: previous?.loan_id, sql: "SELECT is_archived AS unavailable FROM loans WHERE id = ?", label: "empréstimo" },
+    { id: draft.scheduleId === undefined ? previous?.schedule_id : draft.scheduleId, previous: previous?.schedule_id, sql: "SELECT (is_active = 0) AS unavailable FROM schedules WHERE id = ?", label: "recorrência" },
+  ];
+  for (const link of links) {
+    if (link.id === undefined || link.id === null) continue;
+    const target = await db.getFirstAsync<{ unavailable: number }>(link.sql, link.id);
+    if (!target || (target.unavailable === 1 && link.id !== link.previous)) throw new Error(`Selecione um cadastro ativo de ${link.label}, ou remova o vínculo.`);
+  }
+  return accountId;
+}
+
 export async function createTransaction(db: SQLiteDatabase, draft: TransactionDraft, sourceSuggestionId?: string): Promise<string> {
   const now = Date.now();
   const id = createId();
-  const result = await db.runAsync(
+  let savedId = id;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+  if (sourceSuggestionId) {
+    const existing = await tx.getFirstAsync<{ id: string }>("SELECT id FROM transactions WHERE source_suggestion_id = ?", sourceSuggestionId);
+    if (existing) { savedId = existing.id; return; }
+  }
+  const accountId = await validateTransactionReferences(tx, draft);
+  const result = await tx.runAsync(
     "INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, source_suggestion_id, account_id, title, notes, status, kind, goal_id, loan_id, schedule_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_suggestion_id) DO NOTHING",
     id,
     draft.type,
@@ -114,7 +147,7 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
     now,
     now,
     sourceSuggestionId ?? null,
-    draft.accountId ?? "principal",
+    accountId,
     draft.title?.trim() || draft.description?.trim() || null,
     draft.notes?.trim() || null,
     draft.status ?? "paid",
@@ -124,18 +157,20 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
     draft.scheduleId ?? null,
   );
   if (result.changes === 0 && sourceSuggestionId) {
-    const existing = await db.getFirstAsync<{ id: string }>("SELECT id FROM transactions WHERE source_suggestion_id = ?", sourceSuggestionId);
-    if (existing) return existing.id;
+    const existing = await tx.getFirstAsync<{ id: string }>("SELECT id FROM transactions WHERE source_suggestion_id = ?", sourceSuggestionId);
+    if (existing) { savedId = existing.id; return; }
     throw new Error("Lançamento da sugestão não encontrado após conflito.");
   }
-  return id;
+  });
+  return savedId;
 }
 
 export async function updateTransaction(db: SQLiteDatabase, id: string, draft: TransactionDraft): Promise<void> {
   await db.withExclusiveTransactionAsync(async (tx) => {
-  const existing = await tx.getFirstAsync<{ kind: Transaction["kind"]; amount_cents: number; title: string | null; notes: string | null; loan_id: string | null; goal_id: string | null; schedule_id: string | null; account_id: string; status: Transaction["status"] }>("SELECT kind, amount_cents, title, notes, loan_id, goal_id, schedule_id, account_id, status FROM transactions WHERE id = ?", id);
+  const existing = await tx.getFirstAsync<ExistingReferences & { kind: Transaction["kind"]; amount_cents: number; title: string | null; notes: string | null; status: Transaction["status"] }>("SELECT kind, amount_cents, title, notes, loan_id, goal_id, schedule_id, account_id, category_id, type, status FROM transactions WHERE id = ?", id);
   if (!existing) throw new Error("Lançamento não encontrado.");
   if (existing.kind !== "standard" || (draft.kind && draft.kind !== "standard")) throw new Error("Transferências e correções não podem ser editadas como lançamentos comuns.");
+  const accountId = await validateTransactionReferences(tx, draft, existing);
   const loan = await tx.getFirstAsync<{ id: string; direction: "lent" | "borrowed"; principal_cents: number }>("SELECT id, direction, principal_cents FROM loans WHERE initial_transaction_id = ?", id);
   if (loan) {
     if ((draft.loanId === undefined ? existing.loan_id : draft.loanId) !== loan.id || draft.type !== (loan.direction === "lent" ? "expense" : "income") || (draft.status ?? existing.status) !== "paid") throw new Error("O desembolso inicial deve continuar pago, com o mesmo empréstimo e direção. Use os detalhes do empréstimo para compensar o saldo.");
@@ -151,7 +186,7 @@ export async function updateTransaction(db: SQLiteDatabase, id: string, draft: T
     draft.categoryId,
     draft.description?.trim() || null,
     draft.occurredAt,
-    draft.accountId ?? existing.account_id,
+    accountId,
     draft.title === undefined ? existing.title : draft.title?.trim() || null,
     draft.notes === undefined ? existing.notes : draft.notes?.trim() || null,
     draft.status ?? existing.status,
