@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react-native";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../../src/components/BottomNav";
+import { AccountSelector } from "../../src/components/AccountSelector";
+import { CurrencyInput } from "../../src/components/CurrencyInput";
 import { PrimaryButton, Screen, useReducedMotion } from "../../src/components/ui";
 import { archiveAccount, createAccount, createGoal, createLoan, createSchedule, listAccounts, listGoals, listLoans, listSchedules, moveAccount, setPrimaryAccount, updateAccount } from "../../src/repositories/financeRepository";
 import { archiveCategory, createCategory, listCategories, moveCategory, updateCategory } from "../../src/repositories/categoryRepository";
@@ -11,6 +13,7 @@ import type { Account, Goal, Loan, Schedule } from "../../src/types/finance";
 import type { Category } from "../../src/types/category";
 import { radius, useAppColors } from "../../src/theme";
 import { formatCentsToBRL, parseCurrencyToCents } from "../../src/utils/currency";
+import { formatDate, parseDateInput } from "../../src/utils/dates";
 
 type Kind = "accounts" | "goals" | "loans" | "schedules" | "categories";
 type Entry = Account | Goal | Loan | Schedule | Category;
@@ -33,6 +36,12 @@ export default function CollectionScreen() {
   const [accountColor, setAccountColor] = useState(colors.accent);
   const [openingNegative, setOpeningNegative] = useState(false);
   const [categoryIcon, setCategoryIcon] = useState("tag");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [dateInput, setDateInput] = useState(formatDate(Date.now()));
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveInProgress = useRef(false);
 
   const load = useCallback(async () => {
     if (kind === "accounts") setItems(await listAccounts(db));
@@ -45,8 +54,9 @@ export default function CollectionScreen() {
     }
     const [expenses, incomes] = await Promise.all([listCategories(db, "expense"), listCategories(db, "income")]);
     setCategories([...expenses, ...incomes]);
+    setAccounts(await listAccounts(db));
   }, [db, kind]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load().catch((error: unknown) => Alert.alert("Não foi possível carregar", error instanceof Error ? error.message : "Tente novamente.")); }, [load]));
 
   const title = labels[kind];
   const typeOptions = useMemo(() => kind === "accounts" ? ["checking", "cash", "savings", "credit", "investment"] : kind === "loans" ? ["lent", "borrowed"] : kind === "goals" ? ["income", "expense"] : kind === "schedules" ? ["monthly", "weekly", "yearly", "once"] : ["expense", "income"], [kind]);
@@ -59,15 +69,20 @@ export default function CollectionScreen() {
 
   function openCreate() {
     setEditingCategory(null); setEditingAccount(null); setName(""); setAmount(""); setType("expense"); setParentId(null);
+    setCategoryId(categories.find((category) => category.id === "outros-despesa")?.id ?? categories.find((category) => category.type === "expense")?.id ?? "");
+    setFrequency("monthly"); setIsSubscription(false); setDateInput(kind === "schedules" ? formatDate(Date.now()) : ""); setFormError(null);
+    setAccountId(accounts.find((account) => account.isPrimary)?.id ?? accounts[0]?.id ?? null);
     setCategoryColor(colors.accent); setAccountColor(colors.accent); setOpeningNegative(false); setCategoryIcon("tag"); setChoice(typeOptions[0] ?? ""); setOpen(true);
   }
 
   function openAccountEdit(account: Account) {
+    setFormError(null);
     setEditingAccount(account); setName(account.name); setAmount(formatCentsToBRL(Math.abs(account.openingBalanceCents)));
     setOpeningNegative(account.openingBalanceCents < 0); setChoice(account.type); setAccountColor(account.color); setOpen(true);
   }
 
   function openCategoryEdit(category: Category) {
+    setFormError(null);
     setEditingCategory(category); setName(category.name); setType(category.type); setParentId(category.parentId);
     setCategoryColor(category.color); setCategoryIcon(category.icon); setOpen(true);
   }
@@ -80,8 +95,15 @@ export default function CollectionScreen() {
   }
 
   async function save() {
-    if (!name.trim()) return;
-    const cents = parseCurrencyToCents(amount) ?? 0;
+    if (saveInProgress.current) return;
+    setFormError(null);
+    if (!name.trim()) { setFormError("Informe um nome."); return; }
+    const cents = kind === "categories" ? 0 : kind === "accounts" && !amount.trim() ? 0 : parseCurrencyToCents(amount);
+    if (cents === null || (kind !== "accounts" && kind !== "categories" && cents <= 0)) { setFormError("Informe um valor válido maior que zero."); return; }
+    const hasDate = kind === "schedules" || ((kind === "goals" || kind === "loans") && !!dateInput.trim());
+    const nextAt = hasDate ? parseDateInput(dateInput) : null;
+    if (hasDate && nextAt === null) { setFormError("Informe uma data válida no formato DD/MM/AAAA."); return; }
+    saveInProgress.current = true; setSaving(true);
     try {
       if (kind === "accounts") {
         const openingBalanceCents = openingNegative ? -cents : cents;
@@ -89,25 +111,20 @@ export default function CollectionScreen() {
         else await createAccount(db, { name, type: choice as Account["type"], color: accountColor, openingBalanceCents });
       }
       else if (kind === "goals") {
-        if (cents <= 0) return;
-        await createGoal(db, { name, type: choice as Goal["type"], targetCents: cents, color: colors.accent });
+        await createGoal(db, { name, type: choice as Goal["type"], targetCents: cents, color: colors.accent, dueAt: nextAt });
       } else if (kind === "loans") {
-        if (cents <= 0) return;
-        const accounts = await listAccounts(db);
-        const accountId = accounts.find((account) => account.isPrimary)?.id ?? accounts[0]?.id;
-        if (!accountId) throw new Error("Crie uma conta antes.");
-        await createLoan(db, { name, direction: choice as Loan["direction"], principalCents: cents, color: colors.accent, accountId });
+        if (!accountId) throw new Error("Selecione uma conta antes de salvar.");
+        await createLoan(db, { name, direction: choice as Loan["direction"], principalCents: cents, color: colors.accent, accountId, dueAt: nextAt });
       } else if (kind === "schedules") {
-        if (cents <= 0) return;
-        const accounts = await listAccounts(db); const accountId = accounts[0]?.id;
-        if (!accountId) throw new Error("Crie uma conta antes.");
-        await createSchedule(db, { title: name, type: type as Schedule["type"], amountCents: cents, accountId, categoryId, frequency, nextAt: Date.now(), isSubscription });
+        if (!accountId) throw new Error("Selecione uma conta antes de salvar.");
+        await createSchedule(db, { title: name, type: type as Schedule["type"], amountCents: cents, accountId, categoryId, frequency, nextAt: nextAt!, isSubscription });
       } else {
         if (editingCategory) await updateCategory(db, editingCategory.id, { name, icon: categoryIcon, color: categoryColor, parentId });
         else await createCategory(db, { name, type: type as Category["type"], icon: categoryIcon, color: categoryColor, parentId });
       }
     setName(""); setAmount(""); setChoice(typeOptions[0] ?? ""); setFrequency("monthly"); setIsSubscription(false); setEditingCategory(null); setEditingAccount(null); setOpen(false); await load();
-    } catch (error) { Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente."); }
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Não foi possível salvar. Tente novamente."); }
+    finally { saveInProgress.current = false; setSaving(false); }
   }
 
   async function archive(item: Entry) {
@@ -160,9 +177,11 @@ export default function CollectionScreen() {
     </View>)}</View>
     <Text style={[styles.hint, { color: colors.textMuted }]}>Toque em ••• para ver as ações disponíveis.</Text>
   </Screen></ScrollView><BottomNav />
-  <Modal visible={open} animationType={reduceMotion === false ? "slide" : "fade"} transparent onRequestClose={() => setOpen(false)}><View style={styles.scrim}><ScrollView keyboardShouldPersistTaps="handled" style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text }]}>{editingCategory ? "Editar categoria" : editingAccount ? "Editar conta" : "Novo item"}</Text><Pressable accessibilityRole="button" onPress={() => setOpen(false)}><X color={colors.textMuted} size={22} /></Pressable></View>
+  <Modal visible={open} animationType={reduceMotion === false ? "slide" : "fade"} transparent onRequestClose={() => { if (!saving) setOpen(false); }}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}><ScrollView keyboardShouldPersistTaps="handled" style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text }]}>{editingCategory ? "Editar categoria" : editingAccount ? "Editar conta" : kind === "schedules" ? "Nova recorrência" : "Novo item"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar formulário" disabled={saving} onPress={() => setOpen(false)}><X color={colors.textMuted} size={22} /></Pressable></View>
     <Text style={[styles.label, { color: colors.textMuted }]}>NOME</Text><TextInput accessibilityLabel="Nome" placeholder="Nome" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]} />
-    {(kind !== "categories") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "accounts" ? "SALDO INICIAL" : "VALOR"}</Text><TextInput accessibilityLabel="Valor" keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={colors.textMuted} value={amount} onChangeText={setAmount} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]} /></>}
+    {(kind !== "categories") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "accounts" ? "SALDO INICIAL" : "VALOR"}</Text><CurrencyInput value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsToBRL(cents))} /></>}
+    {(kind === "schedules" || kind === "loans") && <><Text style={[styles.label, { color: colors.textMuted }]}>CONTA</Text><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} /></>}
+    {(kind === "schedules" || kind === "goals" || kind === "loans") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "schedules" ? "PRIMEIRA OCORRÊNCIA" : "PRAZO (OPCIONAL)"}</Text><TextInput accessibilityLabel={kind === "schedules" ? "Data da primeira ocorrência" : "Prazo opcional"} keyboardType="number-pad" placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} value={dateInput} onChangeText={(value) => { const digits = value.replace(/\D/g, "").slice(0, 8); setDateInput(digits.length <= 2 ? digits : digits.length <= 4 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`); }} maxLength={10} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]} /></>}
     {kind === "accounts" && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: openingNegative }} onPress={() => setOpeningNegative((value) => !value)} style={styles.subscriptionToggle}><View style={[styles.checkbox, { borderColor: openingNegative ? colors.accent : colors.border, backgroundColor: openingNegative ? colors.accent : "transparent" }]} /><Text style={{ color: colors.text, fontSize: 13 }}>Saldo inicial negativo</Text></Pressable>}
     <Text style={[styles.label, { color: colors.textMuted }]}>{kind === "schedules" ? "FREQUÊNCIA" : kind === "accounts" ? "TIPO DE CONTA" : kind === "loans" ? "DIREÇÃO" : kind === "goals" ? "TIPO DE META" : "TIPO"}</Text>
     <View style={styles.choices}>{typeOptions.map((option) => <Pressable key={option} onPress={() => chooseOption(option)} style={[styles.choice, { borderColor: (kind === "categories" ? type : kind === "schedules" ? frequency : choice) === option ? colors.accent : colors.border, backgroundColor: (kind === "categories" ? type : kind === "schedules" ? frequency : choice) === option ? colors.accentSoft : colors.background }]}><Text style={{ color: (kind === "categories" ? type : kind === "schedules" ? frequency : choice) === option ? colors.accent : colors.textMuted, fontSize: 12, fontWeight: "700" }}>{typeLabels[option] ?? option}</Text></Pressable>)}</View>
@@ -170,10 +189,11 @@ export default function CollectionScreen() {
     {kind === "categories" && <><Text style={[styles.label, { color: colors.textMuted }]}>CATEGORIA PAI</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}><Pressable onPress={() => setParentId(null)} style={[styles.choice, { borderColor: parentId ? colors.border : colors.accent }]}><Text style={{ color: parentId ? colors.textMuted : colors.accent }}>Nenhuma</Text></Pressable>{categories.filter((candidate) => candidate.type === type && !candidate.parentId && candidate.id !== editingCategory?.id).map((candidate) => <Pressable key={candidate.id} onPress={() => setParentId(candidate.id)} style={[styles.choice, { borderColor: parentId === candidate.id ? colors.accent : colors.border }]}><Text style={{ color: parentId === candidate.id ? colors.accent : colors.textMuted }}>{candidate.name}</Text></Pressable>)}</ScrollView>
       <Text style={[styles.label, { color: colors.textMuted }]}>COR</Text><View style={styles.choices}>{categoryColors.map((color) => <Pressable key={color} accessibilityRole="radio" accessibilityState={{ selected: categoryColor === color }} accessibilityLabel={`Cor ${color}`} onPress={() => setCategoryColor(color)} style={[styles.colorChoice, { backgroundColor: color, borderColor: categoryColor === color ? colors.text : "transparent" }]} />)}</View>
       <Text style={[styles.label, { color: colors.textMuted }]}>ÍCONE</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>{categoryIcons.map((icon) => <Pressable key={icon} onPress={() => setCategoryIcon(icon)} style={[styles.choice, { borderColor: categoryIcon === icon ? colors.accent : colors.border }]}><Text style={{ color: categoryIcon === icon ? colors.accent : colors.textMuted, fontSize: 12 }}>{categoryIconLabels[icon]}</Text></Pressable>)}</ScrollView></>}
-    {kind === "schedules" && <><Text style={[styles.label, { color: colors.textMuted }]}>TIPO</Text><View style={styles.choices}>{(["expense", "income"] as const).map((option) => <Pressable key={option} onPress={() => setType(option)} style={[styles.choice, { borderColor: type === option ? colors.accent : colors.border, backgroundColor: type === option ? colors.accentSoft : colors.background }]}><Text style={{ color: type === option ? colors.accent : colors.textMuted, fontSize: 12, fontWeight: "700" }}>{typeLabels[option]}</Text></Pressable>)}</View></>}
+    {kind === "schedules" && <><Text style={[styles.label, { color: colors.textMuted }]}>TIPO</Text><View style={styles.choices}>{(["expense", "income"] as const).map((option) => <Pressable key={option} accessibilityRole="radio" accessibilityState={{ selected: type === option }} onPress={() => { setType(option); setCategoryId(categories.find((category) => category.type === option)?.id ?? ""); }} style={[styles.choice, { borderColor: type === option ? colors.accent : colors.border, backgroundColor: type === option ? colors.accentSoft : colors.background }]}><Text style={{ color: type === option ? colors.accent : colors.textMuted, fontSize: 12, fontWeight: "700" }}>{typeLabels[option]}</Text></Pressable>)}</View></>}
     {kind === "schedules" && <><Text style={[styles.label, { color: colors.textMuted }]}>CATEGORIA</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>{categories.filter((c) => c.type === type).map((c) => <Pressable key={c.id} onPress={() => setCategoryId(c.id)} style={[styles.choice, { borderColor: categoryId === c.id ? colors.accent : colors.border }]}><Text style={{ color: categoryId === c.id ? colors.accent : colors.textMuted, fontSize: 12 }}>{c.name}</Text></Pressable>)}</ScrollView><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: isSubscription }} onPress={() => setIsSubscription((value) => !value)} style={styles.subscriptionToggle}><View style={[styles.checkbox, { borderColor: isSubscription ? colors.accent : colors.border, backgroundColor: isSubscription ? colors.accent : "transparent" }]} /><Text style={{ color: colors.text, fontSize: 13 }}>Marcar como assinatura</Text></Pressable></>}
-    <PrimaryButton onPress={() => void save()} style={styles.save}>Salvar</PrimaryButton>
-  </ScrollView></View></Modal></View>;
+    {formError && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: colors.negative, marginTop: 16, lineHeight: 20 }}>{formError}</Text>}
+    <PrimaryButton disabled={saving} onPress={() => void save()} style={styles.save}>{saving ? "Salvando…" : "Salvar"}</PrimaryButton>
+  </ScrollView></KeyboardAvoidingView></Modal></View>;
 }
 
 const styles = StyleSheet.create({

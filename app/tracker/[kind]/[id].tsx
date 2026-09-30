@@ -5,13 +5,14 @@ import { useSQLiteContext } from "expo-sqlite";
 import { Plus } from "lucide-react-native";
 import { BottomNav } from "../../../src/components/BottomNav";
 import { TransactionItem } from "../../../src/components/TransactionItem";
-import { PrimaryButton, Screen } from "../../../src/components/ui";
+import { EmptyState, PrimaryButton, Screen } from "../../../src/components/ui";
 import { listGoals, listLoans } from "../../../src/repositories/financeRepository";
 import { listGoalTransactions, listLoanTransactions } from "../../../src/repositories/transactionRepository";
 import type { Goal, Loan } from "../../../src/types/finance";
 import type { Transaction } from "../../../src/types/transaction";
 import { radius, useAppColors } from "../../../src/theme";
 import { formatCentsToBRL } from "../../../src/utils/currency";
+import { formatDate } from "../../../src/utils/dates";
 
 export default function TrackerDetailScreen() {
   const { kind, id } = useLocalSearchParams<{ kind: string; id: string }>();
@@ -19,9 +20,12 @@ export default function TrackerDetailScreen() {
   const [goal, setGoal] = useState<Goal | null>(null); const [loan, setLoan] = useState<Loan | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    setLoading(true); setLoadError(null);
+    try {
+    if (!id || (kind !== "loans" && kind !== "goals")) { setLoan(null); setGoal(null); return; }
     if (kind === "loans") {
       const [loans, movements] = await Promise.all([listLoans(db), listLoanTransactions(db, id)]);
       setLoan(loans.find((item) => item.id === id) ?? null); setGoal(null); setTransactions(movements);
@@ -29,11 +33,14 @@ export default function TrackerDetailScreen() {
       const [goals, movements] = await Promise.all([listGoals(db), listGoalTransactions(db, id)]);
       setGoal(goals.find((item) => item.id === id) ?? null); setLoan(null); setTransactions(movements);
     }
-    setLoading(false);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Tente novamente.");
+    } finally { setLoading(false); }
   }, [db, id, kind]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const item = loan ?? goal;
+  if (loadError) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Voltar</Text></Pressable><EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /></Screen><BottomNav /></View>;
   if (!item) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Voltar</Text></Pressable><Text style={[styles.title, { color: colors.text, marginTop: 20 }]}>{loading ? "Carregando…" : "Item não encontrado"}</Text></Screen><BottomNav /></View>;
 
   const target = loan?.principalCents ?? goal?.targetCents ?? 0;
@@ -50,6 +57,7 @@ export default function TrackerDetailScreen() {
       <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{loan ? "Saldo restante" : "Progresso"}</Text>
       <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCentsToBRL(loan ? remaining : progress)}</Text>
       <Text style={[styles.summaryMeta, { color: colors.textMuted }]}>{loan ? `de ${formatCentsToBRL(target)} originais` : `de ${formatCentsToBRL(target)} da meta`}</Text>
+      {item.dueAt !== null && <Text style={[styles.summaryMeta, { color: remaining > 0 && item.dueAt < new Date().setHours(0, 0, 0, 0) ? colors.warning : colors.textMuted }]}>Prazo: {formatDate(item.dueAt)}</Text>}
       <View style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.progressFill, { width: `${ratio * 100}%`, backgroundColor: primaryColor }]} /></View>
       <View style={styles.progressFooter}><Text style={[styles.progressCaption, { color: colors.textMuted }]}>{loan ? "Quitado" : "Concluído"}: {Math.round(ratio * 100)}%</Text><Text style={[styles.progressCaption, { color: remaining === 0 ? colors.positive : colors.textMuted }]}>{remaining === 0 ? "Concluído" : `Restam ${formatCentsToBRL(remaining)}`}</Text></View>
     </View>
