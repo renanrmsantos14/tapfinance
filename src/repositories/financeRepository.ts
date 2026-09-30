@@ -3,7 +3,7 @@ import { createId } from "../database/ids";
 import type { Account, AccountType, Budget, BudgetCycle, Goal, Loan, Schedule } from "../types/finance";
 import { budgetPeriod } from "../utils/budgetPeriods";
 
-export async function listAccounts(db: SQLiteDatabase): Promise<Account[]> {
+export async function listAccounts(db: SQLiteDatabase, includeArchived = false): Promise<Account[]> {
   const rows = await db.getAllAsync<{
     id: string; name: string; type: AccountType; currency: string; color: string;
     opening_balance_cents: number; balance_cents: number; position: number;
@@ -19,8 +19,8 @@ export async function listAccounts(db: SQLiteDatabase): Promise<Account[]> {
         WHEN t.kind = 'standard' AND t.type = 'expense' THEN -t.amount_cents
         ELSE 0 END), 0) AS balance_cents
     FROM accounts a LEFT JOIN transactions t ON t.account_id = a.id
-    WHERE a.is_archived = 0 GROUP BY a.id ORDER BY a.is_primary DESC, a.position, a.created_at
-  `);
+    WHERE (? = 1 OR a.is_archived = 0) GROUP BY a.id ORDER BY a.is_archived, a.is_primary DESC, a.position, a.created_at
+  `, includeArchived ? 1 : 0);
   return rows.map((row) => ({
     id: row.id, name: row.name, type: row.type, currency: row.currency, color: row.color,
     openingBalanceCents: row.opening_balance_cents, balanceCents: row.balance_cents,

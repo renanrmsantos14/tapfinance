@@ -120,3 +120,35 @@ Não faz parte do APK beta.2 já publicado. A revisão integral permanece aberta
 - Os lotes descritos acima como locais são incluídos nesta preparação da beta.3. Publicação e APK devem ser conferidos separadamente.
 - 72 testes automatizados, TypeScript e exportação Android passaram na preparação da beta.3 (3.318 módulos; bundle Hermes). Crédito excedente após identificação manual e mudança de data sem perda de horário têm testes dedicados.
 - APK beta.3 universal compilado; assinatura v2 válida, versionCode 17 e quatro arquiteturas conferidos. Tamanho e SHA-256 registrados nas notas da release; nenhuma validação nativa de uso foi presumida a partir do build.
+
+## Continuação após a beta.3 — validação de lançamentos (local)
+
+Não faz parte do APK beta.3 publicado. Revisão integral permanece aberta.
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Repositório aceita zero, centavos fracionários/fora do limite seguro, datas impossíveis e categoria incompatível | Validação compartilhada antes de criar ou editar, em transação exclusiva | Evitar registros financeiros inválidos mesmo fora do formulário |
+| Novos vínculos podem apontar para cadastros inexistentes ou arquivados | Validação de conta, categoria, meta, empréstimo e recorrência | Evitar movimentações órfãs e seleção de referências indisponíveis |
+| Conta omitida é sempre o ID fixo `principal` | Resolver conta principal ativa atual | Evitar gravar na conta antiga/arquivada |
+| Cadastro arquivado pode bloquear uma correção histórica | Edição permite manter referências históricas arquivadas; nova atribuição continua bloqueada | Preservar histórico sem tornar lançamentos existentes inacessíveis |
+| Entrada rápida mostra erro genérico | Mensagem explica a rejeição e mantém campos preenchidos | Permitir recuperação informada, seguindo Intent |
+
+- Onze falhas reproduzidas inicialmente com SQLite real em memória. Correção passou nos 84 testes completos; TypeScript aprovado.
+- Exportação Android passou após o ajuste final do formulário (3.318 módulos; bundle Hermes). `git diff --check` aprovado. Sem mudança de versão do app ou esquema do banco neste lote.
+- Sugestões bancárias continuam idempotentes mesmo após arquivar a conta. O teste anterior com mock parcial foi substituído por gravação SQLite real.
+- A validação não reescreve nem exclui dados antigos. Metas mantêm a semântica de progresso pelo tipo; transferências e correções continuam fora do progresso.
+- Recuperação de referências foi implementada no lote seguinte. Seleção múltipla/tags/duplicação, fluxos especiais de transferência/correção e prova de interação nativa permanecem pendentes. Testes do repositório não comprovam teclado, leitor de tela, aparência ou clique em dispositivo.
+
+## Lote beta.4 — referências e recuperação dos formulários
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Falha de consulta deixa seletores vazios sem recuperação | Estado de carregamento, erro real e nova tentativa sem apagar campos | Distinguir indisponibilidade de ausência de cadastro |
+| Cadastro original arquivado desaparece na edição | Conta e categoria originais permanecem selecionáveis, com rótulo de arquivamento | Evitar reclassificação silenciosa do histórico |
+| Pré-preenchimento tardio substitui dados digitados | Aplicar sugestões somente a campos ainda não editados | Preservar a intenção do usuário |
+| Retorno do gerenciamento mantém referências antigas | Atualização ao recuperar foco, ignorando consultas obsoletas | Permitir criar um cadastro e continuar o formulário |
+| Seleção reduz escala mesmo com redução de movimento | Escala somente quando movimento está permitido; feedback de opacidade permanece | Respeitar acessibilidade sem retirar resposta ao toque |
+
+- 89 testes automatizados passaram e TypeScript aprovado. Novos testes usam SQLite real para preservação de referências, recuperação da consulta e pré-preenchimento; não são prova de execução do hook ou interação nativa.
+- Lotes locais posteriores à beta.3 são incluídos na preparação da beta.4, versionCode 18. Banco permanece no esquema 5; não há reescrita de dados antigos.
+- QA nativo de foco, teclado, leitor de tela, falhas de consulta e criação/retorno de cadastros permanece pendente. Revisão integral e fidelidade ao Cashew seguem abertas.

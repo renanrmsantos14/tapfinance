@@ -7,17 +7,17 @@ import * as Haptics from "expo-haptics";
 import { CategorySelector } from "../../src/components/CategorySelector";
 import { AccountSelector } from "../../src/components/AccountSelector";
 import { CurrencyInput } from "../../src/components/CurrencyInput";
+import { TransactionFormReferenceStatus } from "../../src/components/TransactionFormReferenceStatus";
 import { EmptyState, Label, PrimaryButton, QuietButton, Screen, SkeletonRows } from "../../src/components/ui";
-import { listCategories } from "../../src/repositories/categoryRepository";
 import { deleteTransaction, getTransaction, updateTransaction } from "../../src/repositories/transactionRepository";
-import type { Category, TransactionType } from "../../src/types/category";
+import type { TransactionType } from "../../src/types/category";
 import type { Transaction } from "../../src/types/transaction";
 import { radius, useAppColors } from "../../src/theme";
 import { formatDate, replaceDateKeepingTime } from "../../src/utils/dates";
 import { formatCentsToBRL } from "../../src/utils/currency";
 import { validateTransactionDraft } from "../../src/utils/validation";
-import { listAccounts } from "../../src/repositories/financeRepository";
-import type { Account } from "../../src/types/finance";
+import { useTransactionFormReferences } from "../../src/hooks/useTransactionFormReferences";
+import { resolveTransactionFormSelection } from "../../src/services/transactionFormService";
 
 export default function TransactionDetailScreen() {
   const db = useSQLiteContext();
@@ -28,21 +28,25 @@ export default function TransactionDetailScreen() {
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const loadSequence = useRef(0);
   const [type, setType] = useState<TransactionType>("expense");
   const [amountCents, setAmountCents] = useState(0);
   const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string | null>(null); const [loanId, setLoanId] = useState<string | null>(null);
   const [scheduleId, setScheduleId] = useState<string | null>(null); const [status, setStatus] = useState<"paid" | "pending">("paid");
   const [description, setDescription] = useState("");
   const [occurredAtText, setOccurredAtText] = useState(formatDate(Date.now()));
+  const references = useTransactionFormReferences(db, type, transaction);
+  const categories = references.data?.categories ?? []; const accounts = references.data?.accounts ?? [];
+  const canSave = references.ready && categories.some((category) => category.id === categoryId) && accounts.some((account) => account.id === accountId);
 
   const loadTransaction = useCallback(async () => {
-    setLoadError(false);
+    const request = ++loadSequence.current;
+    setLoaded(false); setLoadError(false); setTransaction(null);
     try {
       const item = await getTransaction(db, id);
+      if (request !== loadSequence.current) return;
       if (!item) return;
       setTransaction(item);
       setType(item.type);
@@ -54,29 +58,28 @@ export default function TransactionDetailScreen() {
       setDescription(item.description ?? "");
       setOccurredAtText(formatDate(item.occurredAt));
     } catch {
-      setLoadError(true);
+      if (request === loadSequence.current) setLoadError(true);
     } finally {
-      setLoaded(true);
+      if (request === loadSequence.current) setLoaded(true);
     }
   }, [db, id]);
 
-  useEffect(() => { void loadTransaction(); }, [loadTransaction]);
+  useEffect(() => { void loadTransaction(); return () => { loadSequence.current += 1; }; }, [loadTransaction]);
   useEffect(() => {
-    void listCategories(db, type).then((next) => {
-      setCategories(next);
-      setCategoryId((current) => next.some((item) => item.id === current) ? current : next[0]?.id ?? null);
-    });
-  }, [db, type]);
-  useEffect(() => { void listAccounts(db).then(setAccounts); }, [db]);
+    if (!references.data) return;
+    const data = references.data;
+    setCategoryId((current) => resolveTransactionFormSelection(data, current, null).categoryId);
+    setAccountId((current) => resolveTransactionFormSelection(data, null, current).accountId);
+  }, [references.data]);
 
   const save = useCallback(async () => {
-    if (savingRef.current || !transaction) return;
+    if (savingRef.current || !transaction || !canSave) return;
     const parsedDate = replaceDateKeepingTime(transaction.occurredAt, occurredAtText);
     if (parsedDate === null) {
       Alert.alert("Confira a data", "Use o formato DD/MM/AAAA.");
       return;
     }
-    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId, loanId, scheduleId, status, description, notes: transaction.notes, title: description === (transaction.description ?? "") ? transaction.title : description, occurredAt: parsedDate };
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId, loanId, scheduleId, status, description, notes: transaction.notes, title: description === (transaction.description ?? "") ? transaction.title : description, occurredAt: parsedDate };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -92,7 +95,7 @@ export default function TransactionDetailScreen() {
     } finally {
       savingRef.current = false; setSaving(false);
     }
-  }, [accountId, amountCents, categoryId, db, description, goalId, id, loanId, occurredAtText, scheduleId, status, transaction, type]);
+  }, [accountId, amountCents, canSave, categoryId, db, description, goalId, id, loanId, occurredAtText, scheduleId, status, transaction, type]);
 
   function confirmDelete() {
     if (savingRef.current) return;
@@ -116,7 +119,8 @@ export default function TransactionDetailScreen() {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <View style={styles.errorInner}>
-          <EmptyState title={loadError ? "Não foi possível carregar" : "Lançamento não encontrado"} description="Volte ao histórico e tente novamente." actionLabel="Voltar" onAction={() => router.back()} />
+          <EmptyState title={loadError ? "Não foi possível carregar" : "Lançamento não encontrado"} description={loadError ? "Tente consultar o lançamento novamente." : "Volte ao histórico para escolher outro lançamento."} actionLabel={loadError ? "Tentar novamente" : "Voltar"} onAction={loadError ? () => { void loadTransaction(); } : () => router.back()} />
+          {loadError && <QuietButton onPress={() => router.back()} accessibilityLabel="Voltar ao histórico"><Text style={{ color: colors.accent }}>Voltar</Text></QuietButton>}
         </View>
       </View>
     );
@@ -132,7 +136,7 @@ export default function TransactionDetailScreen() {
         <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{formatDate(transaction.occurredAt)}{transaction.title ? ` · ${transaction.title}` : ""}</Text>
       </View>
       <Text style={[styles.specialNote, { color: colors.textMuted }]}>{transaction.kind === "transfer" ? "Esta movimentação faz parte de um par. Ao excluir, as duas partes são removidas juntas." : "Correções não podem ser convertidas em receitas ou despesas por esta tela."}</Text>
-      <Pressable accessibilityRole="button" onPress={confirmDelete} style={styles.deleteButton}><Trash2 color={colors.negative} size={17} /><Text style={[styles.deleteText, { color: colors.negative }]}>{transaction.kind === "transfer" ? "Excluir transferência" : "Excluir correção"}</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={saving} accessibilityState={{ disabled: saving }} onPress={confirmDelete} style={[styles.deleteButton, { opacity: saving ? 0.45 : 1 }]}><Trash2 color={colors.negative} size={17} /><Text style={[styles.deleteText, { color: colors.negative }]}>{saving ? "Excluindo…" : transaction.kind === "transfer" ? "Excluir transferência" : "Excluir correção"}</Text></Pressable>
     </Screen></ScrollView></View>;
   }
 
@@ -145,6 +149,8 @@ export default function TransactionDetailScreen() {
             <View style={styles.topCopy}><Text style={[styles.topTitle, { color: colors.text }]}>Editar lançamento</Text><Text style={[styles.topSubtitle, { color: colors.textMuted }]}>Ajuste os detalhes abaixo</Text></View>
             <View style={styles.topSpacer} accessibilityElementsHidden />
           </View>
+
+          <TransactionFormReferenceStatus loading={references.loading} error={references.error} onRetry={references.retry} missingAccount={references.ready && accounts.length === 0} missingCategory={references.ready && categories.length === 0} />
 
           {transaction.initialLoanId && <Text style={[styles.specialNote, { color: colors.textMuted }]}>Desembolso inicial do empréstimo. Alterar o valor ajusta a referência pela diferença; pagamentos e compensações são preservados. Direção, vínculo e situação paga permanecem fixos.</Text>}
 
@@ -180,11 +186,11 @@ export default function TransactionDetailScreen() {
             <TextInput accessibilityLabel="Descrição" value={description} onChangeText={setDescription} maxLength={80} placeholder="Adicione uma nota" placeholderTextColor={colors.textMuted} style={[styles.input, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} />
           </View>
 
-          <PrimaryButton disabled={saving} accessibilityLabel="Salvar alterações" onPress={() => void save()} style={styles.save}>
+          <PrimaryButton disabled={saving || !canSave} accessibilityLabel="Salvar alterações" onPress={() => void save()} style={styles.save}>
             {saving ? <ActivityIndicator color={colors.background} /> : <Check color={colors.background} size={19} />}
             {saving ? "Salvando…" : "Salvar alterações"}
           </PrimaryButton>
-          <Pressable accessibilityRole="button" onPress={confirmDelete} style={({ pressed }) => [styles.deleteButton, { opacity: pressed ? 0.6 : 1 }]}>
+          <Pressable accessibilityRole="button" disabled={saving} accessibilityState={{ disabled: saving }} onPress={confirmDelete} style={({ pressed }) => [styles.deleteButton, { opacity: saving ? 0.45 : pressed ? 0.6 : 1 }]}>
             <Trash2 color={colors.negative} size={17} />
             <Text style={[styles.deleteText, { color: colors.negative }]}>Excluir lançamento</Text>
           </Pressable>

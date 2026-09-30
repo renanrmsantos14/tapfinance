@@ -7,17 +7,16 @@ import * as Haptics from "expo-haptics";
 import { CategorySelector } from "../src/components/CategorySelector";
 import { AccountSelector } from "../src/components/AccountSelector";
 import { CurrencyInput } from "../src/components/CurrencyInput";
+import { TransactionFormReferenceStatus } from "../src/components/TransactionFormReferenceStatus";
 import { Label, PrimaryButton, QuietButton, Reveal, Screen } from "../src/components/ui";
-import { listCategories } from "../src/repositories/categoryRepository";
 import { createTransaction, suggestCategoryFromHistory } from "../src/repositories/transactionRepository";
-import type { Category, TransactionType } from "../src/types/category";
+import type { TransactionType } from "../src/types/category";
 import { radius, useAppColors } from "../src/theme";
 import { validateTransactionDraft } from "../src/utils/validation";
 import { recordQuickEntryOpened } from "../src/services/assistantService";
 import { getBankSuggestion, markBankSuggestionHandled } from "../src/services/bankNotificationService";
-import { listAccounts, listGoals, listLoans } from "../src/repositories/financeRepository";
-import type { Account } from "../src/types/finance";
-import type { Goal, Loan } from "../src/types/finance";
+import { useTransactionFormReferences } from "../src/hooks/useTransactionFormReferences";
+import { getTrackerFormPrefill, resolveTransactionFormSelection } from "../src/services/transactionFormService";
 
 export default function QuickEntryScreen() {
   const db = useSQLiteContext();
@@ -25,10 +24,7 @@ export default function QuickEntryScreen() {
   const params = useLocalSearchParams<{ assistant?: string; bankSuggestion?: string; loanId?: string; goalId?: string }>();
   const [type, setType] = useState<TransactionType>("expense");
   const [amountCents, setAmountCents] = useState(0);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [goals, setGoals] = useState<Goal[]>([]); const [loans, setLoans] = useState<Loan[]>([]);
   const [linkedId, setLinkedId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
@@ -38,6 +34,17 @@ export default function QuickEntryScreen() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const categoryTouchedRef = useRef(false);
+  const references = useTransactionFormReferences(db, type);
+  const categories = references.data?.categories ?? []; const accounts = references.data?.accounts ?? [];
+  const goals = references.data?.goals ?? []; const loans = references.data?.loans ?? [];
+  const [prefilledTracker, setPrefilledTracker] = useState<string | null>(null);
+  const editedFields = useRef({ type: false, amount: false, description: false });
+  const [dismissedTracker, setDismissedTracker] = useState<string | null>(null);
+  const requestedTracker = params.loanId ? `loan:${params.loanId}` : params.goalId ? `goal:${params.goalId}` : null;
+  const missingRequestedTracker = references.ready && !!requestedTracker && dismissedTracker !== requestedTracker && prefilledTracker !== requestedTracker && !(params.loanId ? loans.some((loan) => loan.id === params.loanId) : goals.some((goal) => goal.id === params.goalId));
+  const missingSelectedTracker = references.ready && !!linkedId && !(linkedId.startsWith("loan:") ? loans.some((loan) => `loan:${loan.id}` === linkedId) : goals.some((goal) => `goal:${goal.id}` === linkedId));
+  const requestedTrackerReady = !requestedTracker || prefilledTracker === requestedTracker || dismissedTracker === requestedTracker;
+  const canSave = references.ready && categories.some((category) => category.id === categoryId) && accounts.some((account) => account.id === accountId) && requestedTrackerReady && !missingSelectedTracker;
 
   useEffect(() => {
     if (params.assistant === "1") recordQuickEntryOpened();
@@ -70,57 +77,30 @@ export default function QuickEntryScreen() {
   }, [db, params.bankSuggestion]);
 
   useEffect(() => {
-    let active = true;
-    void listCategories(db, type).then((next) => {
-      if (!active) return;
-      setCategories(next);
-      setCategoryId((current) => next.some((item) => item.id === current) ? current : next[0]?.id ?? null);
-    });
-    return () => { active = false; };
-  }, [db, type]);
+    if (!references.data) return;
+    const data = references.data;
+    setCategoryId((current) => resolveTransactionFormSelection(data, current, null).categoryId);
+    setAccountId((current) => resolveTransactionFormSelection(data, null, current).accountId);
+  }, [references.data]);
 
   useEffect(() => {
-    let active = true;
-    void listAccounts(db).then((next) => {
-      if (!active) return;
-      setAccounts(next);
-      setAccountId((current) => next.some((item) => item.id === current) ? current : next.find((item) => item.isPrimary)?.id ?? next[0]?.id ?? null);
-    });
-    return () => { active = false; };
-  }, [db]);
+    if (!references.data || !requestedTracker || prefilledTracker === requestedTracker || dismissedTracker === requestedTracker) return;
+    const prefill = getTrackerFormPrefill(references.data, params, { type, amountCents, description }, editedFields.current);
+    if (!prefill) return;
+    setPrefilledTracker(requestedTracker);
+    setLinkedId(prefill.linkedId); setType(prefill.type); setAmountCents(prefill.amountCents); setDescription(prefill.description);
+  }, [amountCents, description, dismissedTracker, prefilledTracker, references.data, requestedTracker, params.goalId, params.loanId, type]);
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([listGoals(db), listLoans(db)]).then(([nextGoals, nextLoans]) => {
-      if (!active) return;
-      setGoals(nextGoals); setLoans(nextLoans);
-    });
-    return () => { active = false; };
-  }, [db]);
-
-  useEffect(() => {
-    if (params.loanId) {
-      const loan = loans.find((item) => item.id === params.loanId);
-      if (!loan) return;
-      setLinkedId(`loan:${loan.id}`);
-      setType(loan.direction === "lent" ? "income" : "expense");
-      setAmountCents(loan.remainingCents);
-      setDescription(`Pagamento de ${loan.name}`);
-    } else if (params.goalId) {
-      const goal = goals.find((item) => item.id === params.goalId);
-      if (!goal) return;
-      setLinkedId(`goal:${goal.id}`);
-      setType(goal.type);
-      setAmountCents(Math.max(0, goal.targetCents - goal.progressCents));
-      setDescription(goal.name);
-    }
-  }, [goals, loans, params.goalId, params.loanId]);
+  function selectTracker(id: string | null) {
+    setLinkedId(id);
+    if (requestedTracker) setDismissedTracker(requestedTracker);
+  }
 
   async function save() {
-    if (savingRef.current) return;
+    if (savingRef.current || !canSave) return;
     const linkedGoal = linkedId?.startsWith("goal:") ? linkedId.slice(5) : null;
     const linkedLoan = linkedId?.startsWith("loan:") ? linkedId.slice(5) : null;
-    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? "principal", goalId: linkedGoal, loanId: linkedLoan, description, title: description, occurredAt: suggestionId ? occurredAt : Date.now() };
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId: linkedGoal, loanId: linkedLoan, description, title: description, occurredAt: suggestionId ? occurredAt : Date.now() };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -136,8 +116,8 @@ export default function QuickEntryScreen() {
       try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch { /* Save already succeeded. */ }
       if (params.assistant === "1") router.dismissAll();
       else router.back();
-    } catch {
-      Alert.alert("Não foi possível salvar", "Tente novamente. O lançamento não foi alterado.");
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", `${error instanceof Error ? error.message : "Tente novamente."} Os campos preenchidos foram preservados.`);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -157,17 +137,21 @@ export default function QuickEntryScreen() {
             <View style={styles.topSpacer} />
           </View>
 
+          <TransactionFormReferenceStatus loading={references.loading} error={references.error} onRetry={references.retry} missingAccount={references.ready && accounts.length === 0} missingCategory={references.ready && categories.length === 0} />
+          {missingRequestedTracker && <View style={styles.section}><Text accessibilityRole="alert" style={{ color: colors.warning }}>A meta ou empréstimo solicitado não está disponível. Nenhum vínculo será adivinhado.</Text><QuietButton onPress={() => selectTracker(null)}><Text style={{ color: colors.accent }}>Continuar sem vínculo</Text></QuietButton></View>}
+          {missingSelectedTracker && <Text accessibilityRole="alert" style={{ color: colors.warning }}>O vínculo selecionado não está mais ativo. Escolha “Nenhum” ou outro cadastro antes de salvar.</Text>}
+
           <View style={styles.section}>
             <Label>Conta</Label>
             <AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} />
           </View>
 
-          {(goals.length > 0 || loans.length > 0) && <View style={styles.section}>
+          {(goals.length > 0 || loans.length > 0 || linkedId !== null) && <View style={styles.section}>
             <Label>Vincular a uma meta ou empréstimo <Text style={styles.optional}>(opcional)</Text></Label>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.linkRow}>
-              <Pressable accessibilityRole="radio" accessibilityState={{ selected: linkedId === null }} onPress={() => setLinkedId(null)} style={[styles.linkOption, { backgroundColor: linkedId === null ? colors.accentSoft : colors.surface, borderColor: linkedId === null ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: linkedId === null ? colors.accent : colors.textMuted }]}>Nenhum</Text></Pressable>
-              {goals.map((goal) => { const id = `goal:${goal.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLinkedId(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{goal.name}</Text></Pressable>; })}
-              {loans.map((loan) => { const id = `loan:${loan.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setLinkedId(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{loan.name}</Text></Pressable>; })}
+              <Pressable accessibilityRole="radio" accessibilityState={{ selected: linkedId === null }} onPress={() => selectTracker(null)} style={[styles.linkOption, { backgroundColor: linkedId === null ? colors.accentSoft : colors.surface, borderColor: linkedId === null ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: linkedId === null ? colors.accent : colors.textMuted }]}>Nenhum</Text></Pressable>
+              {goals.map((goal) => { const id = `goal:${goal.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => selectTracker(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{goal.name}</Text></Pressable>; })}
+              {loans.map((loan) => { const id = `loan:${loan.id}`; const selected = linkedId === id; return <Pressable key={id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => selectTracker(id)} style={[styles.linkOption, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border }]}><Text style={[styles.linkText, { color: selected ? colors.accent : colors.textMuted }]}>{loan.name}</Text></Pressable>; })}
             </ScrollView>
           </View>}
 
@@ -180,7 +164,8 @@ export default function QuickEntryScreen() {
                     key={item}
                     accessibilityRole="tab"
                     accessibilityState={{ selected }}
-                    onPress={() => { categoryTouchedRef.current = true; setCategorySuggested(false); setType(item); void Haptics.selectionAsync(); }}
+                    disabled={saving}
+                    onPress={() => { editedFields.current.type = true; categoryTouchedRef.current = true; setCategorySuggested(false); setType(item); void Haptics.selectionAsync().catch(() => undefined); }}
                     style={({ pressed }) => [styles.typeButton, { backgroundColor: selected ? colors.surface : "transparent", borderColor: selected ? colors.border : "transparent", opacity: pressed ? 0.7 : 1 }]}
                   >
                     <Text style={[styles.typeText, { color: selected ? colors.text : colors.textMuted }]}>{item === "expense" ? "Despesa" : "Receita"}</Text>
@@ -193,14 +178,14 @@ export default function QuickEntryScreen() {
           <Reveal delay={45}>
             <View style={[styles.amountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Label>Valor</Label>
-              <CurrencyInput value={amountCents} onChange={setAmountCents} autoFocus />
+              <CurrencyInput value={amountCents} onChange={(value) => { editedFields.current.amount = true; setAmountCents(value); }} autoFocus />
               <Text style={[styles.hint, { color: colors.textMuted }]}>Use apenas números — os centavos entram automaticamente.</Text>
             </View>
           </Reveal>
 
           <View style={styles.section}>
             <Label>Categoria</Label>
-            <CategorySelector categories={categories} selectedId={categoryId} onSelect={(id) => { categoryTouchedRef.current = true; setCategorySuggested(false); setCategoryId(id); void Haptics.selectionAsync(); }} />
+            <CategorySelector categories={categories} selectedId={categoryId} onSelect={(id) => { categoryTouchedRef.current = true; setCategorySuggested(false); setCategoryId(id); void Haptics.selectionAsync().catch(() => undefined); }} />
             {categorySuggested && <Text style={[styles.hint, { color: colors.textMuted }]}>Categoria sugerida pelo seu histórico. Confira antes de salvar.</Text>}
           </View>
 
@@ -212,7 +197,7 @@ export default function QuickEntryScreen() {
                 placeholder="Ex.: almoço com a equipe"
                 placeholderTextColor={colors.textMuted}
                 value={description}
-                onChangeText={setDescription}
+                onChangeText={(value) => { editedFields.current.description = true; setDescription(value); }}
                 maxLength={80}
                 returnKeyType="done"
                 style={[styles.descriptionInput, { color: colors.text }]}
@@ -221,7 +206,7 @@ export default function QuickEntryScreen() {
             </View>
           </View>
 
-          <PrimaryButton disabled={saving} accessibilityLabel="Salvar lançamento" onPress={() => void save()} style={styles.save}>
+          <PrimaryButton disabled={saving || !canSave} accessibilityLabel="Salvar lançamento" onPress={() => void save()} style={styles.save}>
             {saving ? <ActivityIndicator color={colors.background} /> : <Check color={colors.background} size={19} />}
             {saving ? "Salvando…" : "Salvar lançamento"}
           </PrimaryButton>

@@ -2,6 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ellipsis, type LucideIcon } from "lucide-react-native";
 import { radius, useAppColors } from "../theme";
 import type { Category } from "../types/category";
+import { useReducedMotion } from "./ui";
 
 const iconMap: Record<string, LucideIcon> = {
   utensils: require("lucide-react-native").Utensils,
@@ -20,6 +21,7 @@ const iconMap: Record<string, LucideIcon> = {
 
 export function CategorySelector({ categories, selectedId, onSelect }: { categories: Category[]; selectedId: string | null; onSelect: (id: string) => void }) {
   const colors = useAppColors();
+  const reduceMotion = useReducedMotion();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.content}>
       {categories.map((category) => {
@@ -30,12 +32,12 @@ export function CategorySelector({ categories, selectedId, onSelect }: { categor
             key={category.id}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            accessibilityLabel={`Categoria ${category.name}`}
+            accessibilityLabel={`Categoria ${category.name}${category.isActive ? "" : ", arquivada do lançamento original"}`}
             onPress={() => onSelect(category.id)}
-            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: pressed ? 0.74 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }]}
+            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: pressed ? 0.74 : 1, transform: [{ scale: pressed && reduceMotion === false ? 0.97 : 1 }] }]}
           >
             <Icon color={selected ? colors.accent : colors.textMuted} size={18} strokeWidth={2} />
-            <Text style={[styles.text, { color: selected ? colors.accent : colors.text }]}>{category.name}</Text>
+            <Text style={[styles.text, { color: selected ? colors.accent : colors.text }]}>{category.name}{!category.isActive && " · Arquivada"}</Text>
           </Pressable>
         );
       })}
