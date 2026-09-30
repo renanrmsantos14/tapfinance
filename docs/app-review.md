@@ -119,3 +119,4 @@ Não faz parte do APK beta.2 já publicado. A revisão integral permanece aberta
 - Backups aceitos: v3/v4/v5; downgrade após migração não é suportado. A restauração nativa continua pendente de prova em dispositivo.
 - Os lotes descritos acima como locais são incluídos nesta preparação da beta.3. Publicação e APK devem ser conferidos separadamente.
 - 72 testes automatizados, TypeScript e exportação Android passaram na preparação da beta.3 (3.318 módulos; bundle Hermes). Crédito excedente após identificação manual e mudança de data sem perda de horário têm testes dedicados.
+- APK beta.3 universal compilado; assinatura v2 válida, versionCode 17 e quatro arquiteturas conferidos. Tamanho e SHA-256 registrados nas notas da release; nenhuma validação nativa de uso foi presumida a partir do build.

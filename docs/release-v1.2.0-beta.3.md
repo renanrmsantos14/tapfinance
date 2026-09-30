@@ -16,6 +16,8 @@ Pré-release de gerenciamento de recorrências e integridade de empréstimos. An
 ## Validação e limites
 
 - 72 testes automatizados passaram, sem falhas; TypeScript e exportação Android aprovados (3.318 módulos, bundle Hermes).
+- APK universal compilado com sucesso em 13m36s. `apksigner` confirmou assinatura v2 válida; `aapt` confirmou versionCode 17, versionName 1.2.0-beta.3 e arquiteturas arm64-v8a, armeabi-v7a, x86 e x86_64.
+- Artefato `app-release.apk`: 112.879.241 bytes. SHA-256: `c5c6818d99b1253eb5226ed9cf792cc70697b1d4157060f4f617648edd5afc1c`.
 - Faça backup antes de atualizar. Backups novos no esquema 5 não são compatíveis com aplicativos antigos; não faça downgrade sobre o banco migrado.
 - APK de avaliação usa a chave debug existente, não uma chave de produção para Play Store.
 - Sem dispositivo/emulador disponível: aparência, teclado, acessibilidade, restauração real, Assistente e notificações ainda precisam de QA nativo.
