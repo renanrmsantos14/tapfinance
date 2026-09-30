@@ -1,5 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
+export const CURRENT_SCHEMA_VERSION = 5;
+
 const expenseCategories = [
   ["alimentacao", "Alimentação", "utensils"],
   ["transporte", "Transporte", "car"],
@@ -35,6 +37,7 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
 
   const current = await db.getFirstAsync<{ version: number }>("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations");
   const version = current?.version ?? 0;
+  if (version > CURRENT_SCHEMA_VERSION) throw new Error("Este banco foi criado por uma versão mais recente do TapFinance.");
 
   if (version < 1) {
     await db.execAsync(`
@@ -195,6 +198,26 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     CREATE TRIGGER IF NOT EXISTS activity_transaction_delete AFTER DELETE ON transactions
     BEGIN INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('transaction', OLD.id, 'deleted', CAST(strftime('%s','now') AS INTEGER) * 1000); END;
   `);
+
+  if (version < 4) {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE schedules ADD COLUMN anchor_at INTEGER;
+        UPDATE schedules SET anchor_at = COALESCE(
+          (SELECT MIN(scheduled_for) FROM schedule_instances WHERE schedule_id = schedules.id), next_at
+        );
+      `);
+      await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 4, Date.now());
+    });
+  }
+
+  if (version < 5) {
+    await db.withTransactionAsync(async () => {
+      // Existing loans remain unclassified; never infer their initial movement.
+      await db.execAsync("ALTER TABLE loans ADD COLUMN initial_transaction_id TEXT;");
+      await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 5, Date.now());
+    });
+  }
 
   const now = Date.now();
   const statement = await db.prepareAsync(

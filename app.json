@@ -2,7 +2,7 @@
   "expo": {
     "name": "TapFinance",
     "slug": "tapfinance",
-    "version": "1.2.0-beta.2",
+    "version": "1.2.0-beta.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -27,7 +27,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.tapfinance.app",
-      "versionCode": 16,
+      "versionCode": 17,
       "predictiveBackGestureEnabled": true,
       "launchMode": "singleTask"
     },

@@ -1,6 +1,7 @@
 import type { Category, TransactionType } from "./category";
 
 export type Transaction = {
+  initialLoanId?: string | null;
   id: string;
   type: TransactionType;
   amountCents: number;
@@ -30,8 +31,8 @@ export type TransactionDraft = {
   description?: string;
   occurredAt: number;
   accountId?: string;
-  title?: string;
-  notes?: string;
+  title?: string | null;
+  notes?: string | null;
   status?: "paid" | "pending";
   kind?: "standard" | "transfer" | "correction";
   goalId?: string | null;

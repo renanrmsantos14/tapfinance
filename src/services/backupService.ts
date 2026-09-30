@@ -2,24 +2,12 @@ import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as SQLite from "expo-sqlite";
 import type { SQLiteDatabase } from "expo-sqlite";
+import { initializeDatabase } from "../database/database";
+import { inspectBackupDatabase as inspectDatabase } from "../database/inspectBackup";
 
 const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
-const REQUIRED_TABLES = ["schema_migrations", "accounts", "categories", "transactions", "budgets", "budget_categories", "goals", "loans", "schedules"];
 
 export type BackupPreview = { bytes: Uint8Array; accounts: number; transactions: number; schemaVersion: number };
-
-async function inspectDatabase(database: SQLiteDatabase): Promise<Omit<BackupPreview, "bytes">> {
-  const integrity = await database.getFirstAsync<{ integrity_check: string }>("PRAGMA integrity_check");
-  if (integrity?.integrity_check !== "ok") throw new Error("O arquivo não passou na verificação de integridade.");
-  const tables = await database.getAllAsync<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
-  const existing = new Set(tables.map((table) => table.name));
-  if (REQUIRED_TABLES.some((table) => !existing.has(table))) throw new Error("Este arquivo não é um backup completo do TapFinance.");
-  const version = await database.getFirstAsync<{ version: number }>("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations");
-  if (version?.version !== 3) throw new Error("Versão de backup incompatível com este aplicativo.");
-  const accounts = await database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM accounts");
-  const transactions = await database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM transactions");
-  return { accounts: accounts?.count ?? 0, transactions: transactions?.count ?? 0, schemaVersion: version.version };
-}
 
 export async function exportFullBackup(database: SQLiteDatabase): Promise<boolean> {
   if (!(await Sharing.isAvailableAsync())) return false;
@@ -50,6 +38,9 @@ export async function inspectBackupFile(uri: string): Promise<BackupPreview> {
 export async function restoreFullBackup(database: SQLiteDatabase, preview: BackupPreview): Promise<string> {
   const imported = await SQLite.deserializeDatabaseAsync(preview.bytes);
   try {
+    await inspectDatabase(imported);
+    // Upgrade the isolated imported database before touching the live database.
+    await initializeDatabase(imported);
     await inspectDatabase(imported);
     const original = await database.serializeAsync();
     const recoveryName = `tapfinance-before-restore-${Date.now()}.db`;

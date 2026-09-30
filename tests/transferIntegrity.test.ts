@@ -18,10 +18,11 @@ test("deleting either transfer side deletes the linked pair in one transaction",
 
 test("editing one transfer side as a normal expense is rejected", async () => {
   let updated = false;
-  const db = {
+  const tx = {
     getFirstAsync: async () => ({ kind: "transfer" }),
     runAsync: async () => { updated = true; },
-  } as unknown as SQLiteDatabase;
+  };
+  const db = { withExclusiveTransactionAsync: async (action: (transaction: typeof tx) => Promise<void>) => action(tx) } as unknown as SQLiteDatabase;
   await assert.rejects(updateTransaction(db, "one-side", { type: "expense", amountCents: 1000, categoryId: "food", occurredAt: Date.now() }), /não podem ser editadas/);
   assert.equal(updated, false);
 });
