@@ -68,4 +68,5 @@ Motion permanece curto e respeita redução de movimento. Teclado, foco, máscar
 - 45 testes passaram: oito de agendamento, sete de metas/empréstimos e quatro de orçamentos, além da cobertura anterior.
 - TypeScript e `git diff --check` passaram após as alterações finais de código.
 - Export Android passou após as alterações finais de código (3.316 módulos; bundle Hermes gerado).
+- APK universal beta.2 compilado com sucesso; versão Android 16. O limite de caminhos do Ninja foi contornado com mapeamento temporário da pasta pai em T: e ajuste local CMake, descritos nas notas da release.
 - Lote preparado para a pré-release 1.2.0-beta.2; publicação remota deve ser conferida separadamente.

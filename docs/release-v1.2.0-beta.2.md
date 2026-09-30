@@ -13,11 +13,11 @@ Pré-release de correções de integridade financeira e formulários.
 
 ## Validação e limites
 
-- 45 testes automatizados, TypeScript e exportação Android aprovados. Compilação do APK é gate obrigatório antes da publicação.
+- 45 testes automatizados, TypeScript, exportação Android e compilação do APK universal aprovados.
 - Sem dispositivo ou emulador disponível: UI, backup/restauração, Assistente e notificações ainda precisam de QA nativo.
 - APK de avaliação assinado com a chave debug existente; não destinado à Play Store. Faça backup antes de instalar.
 - Revisão integral e paridade total com o Cashew continuam abertas. Edição avançada de recorrências, personalização, seleção múltipla e efeitos de editar/excluir desembolso inicial estão entre os pontos pendentes.
 
 ## Build local no Windows
 
-O build inicial encontrou o limite de 260 caracteres do Ninja. No `android/app/build.gradle` gerado, a compilação desta versão usa `defaultConfig.externalNativeBuild.cmake.arguments "-DCMAKE_OBJECT_PATH_MAX=128"` para encurtar os nomes dos objetos C++. A pasta Android é gerada e não é versionada; reaplique esse ajuste após um novo prebuild quando o caminho local exigir.
+O build inicial encontrou o limite de 260 caracteres do Ninja. O build foi retomado por um caminho curto (`T:\tapfinance\android`, mapeamento temporário da pasta pai) com `--no-daemon`. No `android/app/build.gradle` gerado, foi usado `defaultConfig.externalNativeBuild.cmake.arguments "-DCMAKE_OBJECT_PATH_MAX=240"`. A tentativa de usar somente 128 não resolveu o problema. A pasta Android é gerada e não é versionada; após prebuild, caminhos longos podem exigir o mesmo ajuste local.
