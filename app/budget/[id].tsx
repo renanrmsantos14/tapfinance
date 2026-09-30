@@ -4,7 +4,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import Svg, { Circle } from "react-native-svg";
 import { BottomNav } from "../../src/components/BottomNav";
-import { Screen } from "../../src/components/ui";
+import { EmptyState, Screen } from "../../src/components/ui";
 import { getBudgetCategoryBreakdown, type BudgetCategoryBreakdown } from "../../src/repositories/financeRepository";
 import type { Budget } from "../../src/types/finance";
 import { radius, useAppColors } from "../../src/theme";
@@ -22,10 +22,15 @@ export default function BudgetDetailScreen() {
   const [periodOffset, setPeriodOffset] = useState(0);
   const [hasPrevious, setHasPrevious] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const load = useCallback(async () => {
-    if (!id) return;
+    setLoading(true); setLoadError(null);
+    try {
+    if (!id) { setBudget(null); return; }
     const detail = await getBudgetCategoryBreakdown(db, id, periodOffset);
-    setBudget(detail?.budget ?? null); setCategories(detail?.categories ?? []); setHasPrevious(detail?.hasPrevious ?? false); setLoading(false);
+    setBudget(detail?.budget ?? null); setCategories(detail?.categories ?? []); setHasPrevious(detail?.hasPrevious ?? false);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Tente novamente."); }
+    finally { setLoading(false); }
   }, [db, id, periodOffset]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
@@ -41,7 +46,8 @@ export default function BudgetDetailScreen() {
     });
   }, [categories, total]);
 
-  if (!budget) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Orçamentos</Text></Pressable><Text style={[styles.title, { color: colors.text, marginTop: 22 }]}>{loading ? "Carregando…" : "Orçamento não encontrado"}</Text></Screen><BottomNav /></View>;
+  if (loadError) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Orçamentos</Text></Pressable><EmptyState title="Não foi possível carregar o período" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /></Screen><BottomNav /></View>;
+  if (loading || !budget) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Orçamentos</Text></Pressable><Text style={[styles.title, { color: colors.text, marginTop: 22 }]}>{loading ? "Carregando…" : "Orçamento não encontrado"}</Text></Screen><BottomNav /></View>;
   const remaining = budget.amountCents - budget.spentCents;
   const progress = budget.spentCents / Math.max(budget.amountCents, 1);
 

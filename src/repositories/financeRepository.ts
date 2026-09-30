@@ -119,15 +119,17 @@ export async function listBudgets(db: SQLiteDatabase): Promise<Budget[]> {
 }
 
 export async function createBudget(db: SQLiteDatabase, input: { name: string; amountCents: number; color: string; cycle: BudgetCycle; startAt?: number; endAt?: number | null; categoryIds?: string[]; categoryLimits?: { categoryId: string; limitCents: number | null }[] }): Promise<string> {
-  if (!input.name.trim() || !Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe nome e limite válidos.");
   const id = createId(); const now = Date.now();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync(
+  const configuration = { ...input, startAt: input.startAt ?? now, endAt: input.endAt ?? null, categoryLimits: input.categoryLimits ?? input.categoryIds?.map((categoryId) => ({ categoryId, limitCents: null })) ?? [] };
+  validateBudgetConfiguration(configuration);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await validateBudgetCategories(tx, configuration.categoryLimits);
+    await tx.runAsync(
       "INSERT INTO budgets (id, name, amount_cents, color, cycle, start_at, end_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, input.name.trim(), input.amountCents, input.color, input.cycle, input.startAt ?? now, input.endAt ?? null, now, now,
+      id, input.name.trim(), input.amountCents, input.color, input.cycle, configuration.startAt, configuration.endAt, now, now,
     );
-    for (const category of input.categoryLimits ?? input.categoryIds?.map((categoryId) => ({ categoryId, limitCents: null })) ?? []) {
-      await db.runAsync("INSERT INTO budget_categories (budget_id, category_id, limit_cents) VALUES (?, ?, ?)", id, category.categoryId, category.limitCents);
+    for (const category of configuration.categoryLimits) {
+      await tx.runAsync("INSERT INTO budget_categories (budget_id, category_id, limit_cents) VALUES (?, ?, ?)", id, category.categoryId, category.limitCents);
     }
   });
   return id;
@@ -137,6 +139,22 @@ export type BudgetConfiguration = {
   id: string; name: string; amountCents: number; color: string; cycle: BudgetCycle;
   startAt: number; endAt: number | null; categoryLimits: { categoryId: string; limitCents: number | null }[];
 };
+
+function validateBudgetConfiguration(input: Omit<BudgetConfiguration, "id">): void {
+  if (!input.name.trim() || !Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe nome e limite válidos.");
+  if (!Number.isSafeInteger(input.startAt) || !Number.isFinite(new Date(input.startAt).getTime())) throw new Error("Data inicial inválida.");
+  if (input.endAt !== null && (!Number.isSafeInteger(input.endAt) || !Number.isFinite(new Date(input.endAt).getTime()))) throw new Error("Data final inválida.");
+  if (input.cycle === "custom" && (input.endAt === null || input.endAt <= input.startAt)) throw new Error("Período personalizado inválido.");
+  if (new Set(input.categoryLimits.map((item) => item.categoryId)).size !== input.categoryLimits.length) throw new Error("Categoria repetida no orçamento.");
+  if (input.categoryLimits.some((item) => item.limitCents !== null && (!Number.isSafeInteger(item.limitCents) || item.limitCents <= 0))) throw new Error("Limite por categoria inválido.");
+}
+
+async function validateBudgetCategories(db: SQLiteDatabase, limits: BudgetConfiguration["categoryLimits"]): Promise<void> {
+  for (const item of limits) {
+    const category = await db.getFirstAsync<{ id: string }>("SELECT id FROM categories WHERE id = ? AND type = 'expense'", item.categoryId);
+    if (!category) throw new Error("Selecione categorias de despesa existentes para o orçamento.");
+  }
+}
 
 export async function getBudgetConfiguration(db: SQLiteDatabase, id: string): Promise<BudgetConfiguration | null> {
   const row = await db.getFirstAsync<{ id: string; name: string; amount_cents: number; color: string; cycle: BudgetCycle; start_at: number; end_at: number | null }>(
@@ -154,14 +172,11 @@ export async function getBudgetConfiguration(db: SQLiteDatabase, id: string): Pr
 }
 
 export async function updateBudget(db: SQLiteDatabase, id: string, input: Omit<BudgetConfiguration, "id">): Promise<void> {
-  if (!input.name.trim() || !Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe nome e limite válidos.");
-  if (input.cycle === "custom" && (!input.endAt || input.endAt <= input.startAt)) throw new Error("Período personalizado inválido.");
-  const uniqueCategories = new Set(input.categoryLimits.map((item) => item.categoryId));
-  if (uniqueCategories.size !== input.categoryLimits.length) throw new Error("Categoria repetida no orçamento.");
-  if (input.categoryLimits.some((item) => item.limitCents !== null && (!Number.isSafeInteger(item.limitCents) || item.limitCents <= 0))) throw new Error("Limite por categoria inválido.");
+  validateBudgetConfiguration(input);
   await db.withExclusiveTransactionAsync(async (tx) => {
     const existing = await tx.getFirstAsync<{ id: string }>("SELECT id FROM budgets WHERE id = ? AND is_archived = 0", id);
     if (!existing) throw new Error("Orçamento não encontrado.");
+    await validateBudgetCategories(tx, input.categoryLimits);
     await tx.runAsync("UPDATE budgets SET name = ?, amount_cents = ?, color = ?, cycle = ?, start_at = ?, end_at = ?, updated_at = ? WHERE id = ?",
       input.name.trim(), input.amountCents, input.color, input.cycle, input.startAt, input.endAt, Date.now(), id);
     await tx.runAsync("DELETE FROM budget_categories WHERE budget_id = ?", id);
@@ -212,13 +227,16 @@ export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: s
 export async function listGoals(db: SQLiteDatabase): Promise<Goal[]> {
   const rows = await db.getAllAsync<{ id: string; name: string; type: "income" | "expense"; target_cents: number; color: string; due_at: number | null; is_archived: number; progress_cents: number }>(`
     SELECT g.id, g.name, g.type, g.target_cents, g.color, g.due_at, g.is_archived,
-      COALESCE(SUM(CASE WHEN t.type = g.type AND t.status = 'paid' THEN t.amount_cents ELSE 0 END), 0) AS progress_cents
+      COALESCE(SUM(CASE WHEN t.type = g.type AND t.status = 'paid' AND t.kind = 'standard' THEN t.amount_cents ELSE 0 END), 0) AS progress_cents
     FROM goals g LEFT JOIN transactions t ON t.goal_id = g.id WHERE g.is_archived = 0 GROUP BY g.id ORDER BY g.created_at
   `);
   return rows.map((r) => ({ id: r.id, name: r.name, type: r.type, targetCents: r.target_cents, progressCents: r.progress_cents, color: r.color, dueAt: r.due_at, isArchived: r.is_archived === 1 }));
 }
 
 export async function createGoal(db: SQLiteDatabase, input: { name: string; type: Goal["type"]; targetCents: number; color: string; dueAt?: number | null }): Promise<string> {
+  if (!input.name.trim()) throw new Error("Informe o nome da meta.");
+  if (!Number.isSafeInteger(input.targetCents) || input.targetCents <= 0) throw new Error("Informe um valor válido maior que zero.");
+  if (input.dueAt != null && (!Number.isSafeInteger(input.dueAt) || !Number.isFinite(new Date(input.dueAt).getTime()))) throw new Error("Informe uma data válida.");
   const id = createId(); const now = Date.now();
   await db.runAsync("INSERT INTO goals (id, name, type, target_cents, color, due_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, input.name.trim(), input.type, input.targetCents, input.color, input.dueAt ?? null, now, now);
   return id;
@@ -229,21 +247,28 @@ export async function listLoans(db: SQLiteDatabase): Promise<Loan[]> {
     SELECT l.id, l.name, l.direction, l.principal_cents, l.offset_cents, l.color, l.due_at, l.is_archived,
       COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount_cents ELSE -t.amount_cents END), 0) AS movement_cents,
       COUNT(t.id) AS movements
-    FROM loans l LEFT JOIN transactions t ON t.loan_id = l.id AND t.status = 'paid' WHERE l.is_archived = 0 GROUP BY l.id ORDER BY l.created_at
+    FROM loans l LEFT JOIN transactions t ON t.loan_id = l.id AND t.status = 'paid' AND t.kind = 'standard' WHERE l.is_archived = 0 GROUP BY l.id ORDER BY l.created_at
   `);
   return rows.map((r) => ({ id: r.id, name: r.name, direction: r.direction, principalCents: r.principal_cents, remainingCents: Math.max(0, (r.movements === 0 ? r.principal_cents : r.direction === "lent" ? -r.movement_cents : r.movement_cents) + r.offset_cents), color: r.color, dueAt: r.due_at, isArchived: r.is_archived === 1 }));
 }
 
 export async function createLoan(db: SQLiteDatabase, input: { name: string; direction: Loan["direction"]; principalCents: number; color: string; accountId?: string; dueAt?: number | null }): Promise<string> {
+  if (!input.name.trim()) throw new Error("Informe o nome do empréstimo.");
+  if (!Number.isSafeInteger(input.principalCents) || input.principalCents <= 0) throw new Error("Informe um valor válido maior que zero.");
+  if (input.dueAt != null && (!Number.isSafeInteger(input.dueAt) || !Number.isFinite(new Date(input.dueAt).getTime()))) throw new Error("Informe uma data válida.");
   const id = createId(); const now = Date.now(); const transactionId = createId();
   const type = input.direction === "lent" ? "expense" : "income";
   const categoryId = type === "expense" ? "outros-despesa" : "outros-receita";
-  await db.withTransactionAsync(async () => {
-    await db.runAsync("INSERT INTO loans (id, name, direction, principal_cents, color, due_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, input.name.trim(), input.direction, input.principalCents, input.color, input.dueAt ?? null, now, now);
-    await db.runAsync(
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const account = input.accountId
+      ? await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", input.accountId)
+      : await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY is_primary DESC, position, created_at LIMIT 1");
+    if (!account) throw new Error("Selecione uma conta ativa para o empréstimo.");
+    await tx.runAsync("INSERT INTO loans (id, name, direction, principal_cents, color, due_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, input.name.trim(), input.direction, input.principalCents, input.color, input.dueAt ?? null, now, now);
+    await tx.runAsync(
       `INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, account_id, title, status, kind, loan_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'standard', ?)`,
-      transactionId, type, input.principalCents, categoryId, input.name.trim(), now, now, now, input.accountId ?? "principal", input.name.trim(), id,
+      transactionId, type, input.principalCents, categoryId, input.name.trim(), now, now, now, account.id, input.name.trim(), id,
     );
   });
   return id;
@@ -257,51 +282,75 @@ export async function listSchedules(db: SQLiteDatabase): Promise<Schedule[]> {
 }
 
 export async function createSchedule(db: SQLiteDatabase, input: Omit<Schedule, "id" | "isActive">): Promise<string> {
+  if (!input.title.trim()) throw new Error("Informe o nome da recorrência.");
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe um valor válido maior que zero.");
+  if (!Number.isSafeInteger(input.nextAt) || !Number.isFinite(new Date(input.nextAt).getTime())) throw new Error("Informe uma data válida.");
   const id = createId(); const now = Date.now();
-  await db.runAsync("INSERT INTO schedules (id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, input.frequency, input.nextAt, input.isSubscription ? 1 : 0, now, now);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const account = await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", input.accountId);
+    if (!account) throw new Error("Selecione uma conta ativa.");
+    const category = await tx.getFirstAsync<{ id: string }>("SELECT id FROM categories WHERE id = ? AND type = ? AND is_active = 1", input.categoryId, input.type);
+    if (!category) throw new Error("Selecione uma categoria ativa compatível com o tipo de lançamento.");
+    await tx.runAsync("INSERT INTO schedules (id, title, type, amount_cents, account_id, category_id, frequency, next_at, is_subscription, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, input.title.trim(), input.type, input.amountCents, input.accountId, input.categoryId, input.frequency, input.nextAt, input.isSubscription ? 1 : 0, now, now);
+  });
   return id;
 }
 
-function addFrequency(timestamp: number, frequency: Schedule["frequency"]) {
+function addFrequency(timestamp: number, frequency: Schedule["frequency"], anchor: number) {
   const date = new Date(timestamp);
   if (frequency === "weekly") date.setDate(date.getDate() + 7);
   else if (frequency === "monthly" || frequency === "yearly") {
-    const day = date.getDate();
+    const original = new Date(anchor);
+    const day = original.getDate();
     date.setDate(1);
     if (frequency === "monthly") date.setMonth(date.getMonth() + 1);
-    else date.setFullYear(date.getFullYear() + 1);
+    else { date.setFullYear(date.getFullYear() + 1); date.setMonth(original.getMonth()); }
     const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     date.setDate(Math.min(day, lastDay));
   }
   return date.getTime();
 }
 
-export async function materializeScheduledTransactions(db: SQLiteDatabase, now = Date.now()): Promise<void> {
+const scheduleRefreshes = new WeakMap<SQLiteDatabase, Promise<void>>();
+
+export function materializeScheduledTransactions(db: SQLiteDatabase, now = Date.now()): Promise<void> {
+  const refresh = (scheduleRefreshes.get(db) ?? Promise.resolve()).catch(() => undefined).then(() => materializeSchedules(db, now));
+  scheduleRefreshes.set(db, refresh);
+  return refresh;
+}
+
+async function materializeSchedules(db: SQLiteDatabase, now: number): Promise<void> {
   const until = now + 45 * 24 * 60 * 60 * 1000;
   const schedules = await db.getAllAsync<{ id: string; title: string; type: "expense" | "income"; amount_cents: number; account_id: string; category_id: string; frequency: Schedule["frequency"]; next_at: number }>(
     "SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at FROM schedules WHERE is_active = 1 AND next_at <= ? ORDER BY next_at",
     until,
   );
-  for (const schedule of schedules) {
-    let nextAt = schedule.next_at; let created = 0;
-    while (nextAt <= until && created < 12) {
-      await db.withTransactionAsync(async () => {
-        const exists = await db.getFirstAsync<{ transaction_id: string }>("SELECT transaction_id FROM schedule_instances WHERE schedule_id = ? AND scheduled_for = ?", schedule.id, nextAt);
+  for (const candidate of schedules) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      const schedule = await tx.getFirstAsync<typeof candidate>("SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at FROM schedules WHERE id = ? AND is_active = 1", candidate.id);
+      if (!schedule) return;
+      const first = await tx.getFirstAsync<{ anchor: number | null }>("SELECT MIN(scheduled_for) AS anchor FROM schedule_instances WHERE schedule_id = ?", schedule.id);
+      const anchor = first?.anchor ?? schedule.next_at;
+      let nextAt = schedule.next_at; let created = 0;
+      while (nextAt <= until && created < 12) {
+        const exists = await tx.getFirstAsync<{ transaction_id: string }>("SELECT transaction_id FROM schedule_instances WHERE schedule_id = ? AND scheduled_for = ?", schedule.id, nextAt);
         if (!exists) {
           const transactionId = createId(); const timestamp = Date.now();
-          await db.runAsync(
+          await tx.runAsync(
             `INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, account_id, title, status, kind, schedule_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'standard', ?)`,
             transactionId, schedule.type, schedule.amount_cents, schedule.category_id, schedule.title, nextAt, timestamp, timestamp, schedule.account_id, schedule.title, schedule.id,
           );
-          await db.runAsync("INSERT INTO schedule_instances (schedule_id, scheduled_for, transaction_id) VALUES (?, ?, ?)", schedule.id, nextAt, transactionId);
+          await tx.runAsync("INSERT INTO schedule_instances (schedule_id, scheduled_for, transaction_id) VALUES (?, ?, ?)", schedule.id, nextAt, transactionId);
         }
-        if (schedule.frequency === "once") await db.runAsync("UPDATE schedules SET is_active = 0, updated_at = ? WHERE id = ?", Date.now(), schedule.id);
-        else await db.runAsync("UPDATE schedules SET next_at = ?, updated_at = ? WHERE id = ?", addFrequency(nextAt, schedule.frequency), Date.now(), schedule.id);
-      });
-      created += 1;
-      if (schedule.frequency === "once") break;
-      nextAt = addFrequency(nextAt, schedule.frequency);
-    }
+        created += 1;
+        if (schedule.frequency === "once") {
+          await tx.runAsync("UPDATE schedules SET is_active = 0, updated_at = ? WHERE id = ?", Date.now(), schedule.id);
+          break;
+        }
+        nextAt = addFrequency(nextAt, schedule.frequency, anchor);
+        await tx.runAsync("UPDATE schedules SET next_at = ?, updated_at = ? WHERE id = ?", nextAt, Date.now(), schedule.id);
+      }
+    });
   }
 }

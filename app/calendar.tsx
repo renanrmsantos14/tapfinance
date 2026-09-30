@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useFocusEffect, router } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
@@ -7,6 +7,7 @@ import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
 import { Screen } from "../src/components/ui";
 import { listTransactions } from "../src/repositories/transactionRepository";
+import { materializeScheduledTransactions } from "../src/repositories/financeRepository";
 import type { Transaction } from "../src/types/transaction";
 import { radius, useAppColors } from "../src/theme";
 import { formatCentsToBRL } from "../src/utils/currency";
@@ -14,8 +15,11 @@ import { formatCentsToBRL } from "../src/utils/currency";
 export default function CalendarScreen() {
   const db = useSQLiteContext(); const colors = useAppColors(); const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1)); const [items, setItems] = useState<Transaction[]>([]);
   const start = month.getTime(); const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).getTime();
-  const load = useCallback(async () => setItems((await listTransactions(db)).filter((item) => item.occurredAt >= start && item.occurredAt < end)), [db, end, start]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  const load = useCallback(async () => {
+    await materializeScheduledTransactions(db);
+    setItems((await listTransactions(db)).filter((item) => item.occurredAt >= start && item.occurredAt < end));
+  }, [db, end, start]);
+  useFocusEffect(useCallback(() => { void load().catch((error: unknown) => Alert.alert("Não foi possível carregar o calendário", error instanceof Error ? error.message : "Tente novamente.")); }, [load]));
   const days = useMemo(() => { const firstWeekday = (month.getDay() + 6) % 7; const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate(); return [...Array(firstWeekday).fill(0), ...Array.from({ length: count }, (_, i) => i + 1)]; }, [month]);
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const txByDay = new Map<number, number>(); for (const item of items) { const day = new Date(item.occurredAt).getDate(); txByDay.set(day, (txByDay.get(day) ?? 0) + (item.type === "income" ? item.amountCents : -item.amountCents)); }

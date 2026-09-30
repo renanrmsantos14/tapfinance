@@ -7,7 +7,7 @@ import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
 import { EmptyState, Reveal, Screen, SkeletonRows } from "../src/components/ui";
 import { listTransactions } from "../src/repositories/transactionRepository";
-import { listAccounts } from "../src/repositories/financeRepository";
+import { listAccounts, materializeScheduledTransactions } from "../src/repositories/financeRepository";
 import { listCategories } from "../src/repositories/categoryRepository";
 import type { Transaction } from "../src/types/transaction";
 import type { Category, TransactionType } from "../src/types/category";
@@ -40,6 +40,7 @@ export default function TransactionsScreen() {
     setLoading(true);
     setLoadError(false);
     try {
+      await materializeScheduledTransactions(db);
       const [transactions, activeAccounts, expenses, incomes] = await Promise.all([
         listTransactions(db), listAccounts(db), listCategories(db, "expense"), listCategories(db, "income"),
       ]);
