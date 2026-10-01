@@ -34,6 +34,20 @@ export function replaceDateKeepingTime(timestamp: number, value: string): number
   return date.getTime();
 }
 
+export function replaceDateAndTime(timestamp: number, dateText: string, timeText: string): number | null {
+  const original = new Date(timestamp);
+  const parsed = parseDateInput(dateText);
+  const clock = /^(\d{2}):(\d{2})$/.exec(timeText.trim());
+  if (!Number.isFinite(original.getTime()) || parsed === null || !clock) return null;
+  const hours = Number(clock[1]); const minutes = Number(clock[2]);
+  if (hours > 23 || minutes > 59) return null;
+  const date = new Date(parsed); const day = date.getDate(); const month = date.getMonth(); const year = date.getFullYear();
+  const clockUnchanged = hours === original.getHours() && minutes === original.getMinutes();
+  date.setHours(hours, minutes, clockUnchanged ? original.getSeconds() : 0, clockUnchanged ? original.getMilliseconds() : 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day || date.getHours() !== hours || date.getMinutes() !== minutes) return null;
+  return date.getTime();
+}
+
 export function formatMonthLabel(timestamp: number): string {
   return new Intl.DateTimeFormat("pt-BR", { month: "long" })
     .format(new Date(timestamp))

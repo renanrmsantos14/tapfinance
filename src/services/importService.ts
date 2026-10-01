@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { createId } from "../database/ids";
-import { createAccount } from "../repositories/financeRepository";
+import { createAccountInTransaction } from "../repositories/financeRepository";
 import { createCategory } from "../repositories/categoryRepository";
 import type { TransactionType } from "../types/category";
 import { normalized, parseCsvPreview, type CsvPreview } from "../utils/csvImport";
@@ -54,7 +54,7 @@ export async function importCsv(database: SQLiteDatabase, preview: CsvPreview): 
       if (exists) { skipped += 1; continue; }
       let accountId = accountIds.get(normalized(row.accountName)) ?? primaryId;
       if (row.accountName && !accountIds.has(normalized(row.accountName))) {
-        accountId = await createAccount(tx, { name: row.accountName, type: "checking", color: "#8DB9EA" });
+        accountId = await createAccountInTransaction(tx, { name: row.accountName, type: "checking", color: "#8DB9EA" });
         accountIds.set(normalized(row.accountName), accountId);
       }
       const categoryKey = `${row.type}:${normalized(row.categoryName)}`;

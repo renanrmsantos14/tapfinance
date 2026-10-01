@@ -16,8 +16,10 @@ import { createTransaction, deleteTransaction, getTransaction, updateTransaction
 import type { TransactionType } from "../../src/types/category";
 import type { Transaction } from "../../src/types/transaction";
 import { radius, useAppColors } from "../../src/theme";
-import { formatDate, replaceDateKeepingTime } from "../../src/utils/dates";
-import { formatCentsToBRL } from "../../src/utils/currency";
+import { formatDate, formatTime, replaceDateAndTime } from "../../src/utils/dates";
+import { TransactionDateTimeFields } from "../../src/components/TransactionDateTimeFields";
+import { TransactionStatusSelector } from "../../src/components/TransactionStatusSelector";
+import { formatCentsByCurrency } from "../../src/utils/currency";
 import { validateTransactionDraft } from "../../src/utils/validation";
 import { useTransactionFormReferences } from "../../src/hooks/useTransactionFormReferences";
 import { buildTransactionCopyDraft, resolveTransactionFormSelection } from "../../src/services/transactionFormService";
@@ -43,6 +45,7 @@ export default function TransactionDetailScreen() {
   const [title, setTitle] = useState(""); const [notes, setNotes] = useState("");
   const [tags, setTags] = useState<string[]>([]); const [tagInput, setTagInput] = useState(""); const tagsEdited = useRef(false);
   const [occurredAtText, setOccurredAtText] = useState(formatDate(Date.now()));
+  const [occurredTimeText, setOccurredTimeText] = useState(formatTime(Date.now()));
   const [copyOccurredAt, setCopyOccurredAt] = useState(Date.now());
   const references = useTransactionFormReferences(db, type, duplicateMode ? null : transaction);
   const categories = references.data?.categories ?? []; const accounts = references.data?.accounts ?? [];
@@ -69,6 +72,7 @@ export default function TransactionDetailScreen() {
       setTitle(item.title ?? ""); setNotes(item.notes ?? ""); setTags(item.tags); setTagInput(""); tagsEdited.current = duplicateMode;
       setCopyOccurredAt(copied?.occurredAt ?? Date.now());
       setOccurredAtText(formatDate(copied?.occurredAt ?? item.occurredAt));
+      setOccurredTimeText(formatTime(copied?.occurredAt ?? item.occurredAt));
     } catch {
       if (request === loadSequence.current) setLoadError(true);
     } finally {
@@ -86,9 +90,9 @@ export default function TransactionDetailScreen() {
 
   const save = useCallback(async () => {
     if (savingRef.current || !transaction || !canSave) return;
-    const parsedDate = replaceDateKeepingTime(duplicateMode ? copyOccurredAt : transaction.occurredAt, occurredAtText);
+    const parsedDate = replaceDateAndTime(duplicateMode ? copyOccurredAt : transaction.occurredAt, occurredAtText, occurredTimeText);
     if (parsedDate === null) {
-      Alert.alert("Confira a data", "Use o formato DD/MM/AAAA.");
+      Alert.alert("Confira data e hora", "Use DD/MM/AAAA e HH:mm (00:00 a 23:59). Os campos foram preservados.");
       return;
     }
     let nextTags: string[] | undefined;
@@ -114,11 +118,11 @@ export default function TransactionDetailScreen() {
     } finally {
       savingRef.current = false; setSaving(false);
     }
-  }, [accountId, amountCents, canSave, categoryId, copyOccurredAt, db, description, duplicateMode, goalId, id, loanId, notes, occurredAtText, scheduleId, status, tagInput, tags, title, transaction, type]);
+  }, [accountId, amountCents, canSave, categoryId, copyOccurredAt, db, description, duplicateMode, goalId, id, loanId, notes, occurredAtText, occurredTimeText, scheduleId, status, tagInput, tags, title, transaction, type]);
 
   function confirmDelete() {
     if (savingRef.current || duplicateMode) return;
-    Alert.alert(transaction?.kind === "transfer" ? "Excluir transferência?" : "Excluir lançamento?", `${transaction?.title || transaction?.description || "Lançamento"} · ${formatCentsToBRL(transaction?.amountCents ?? 0)} · ${transaction?.status === "paid" ? "Pago" : "Pendente"}. ${transaction?.kind === "transfer" ? "As duas movimentações vinculadas serão excluídas." : transaction?.initialLoanId ? "Este é o desembolso inicial. Excluir altera a movimentação da conta, mas não apaga nem quita a dívida do empréstimo." : "A movimentação será removida da conta."} Essa ação não pode ser desfeita.`, [
+    Alert.alert(transaction?.kind === "transfer" ? "Excluir transferência?" : "Excluir lançamento?", `${transaction?.title || transaction?.description || "Lançamento"} · ${formatCentsByCurrency(transaction?.amountCents ?? 0, transaction?.accountCurrency)} · ${transaction?.status === "paid" ? "Pago" : "Pendente"}. ${transaction?.kind === "transfer" ? "As duas movimentações vinculadas serão excluídas." : transaction?.initialLoanId ? "Este é o desembolso inicial. Excluir altera a movimentação da conta, mas não apaga nem quita a dívida do empréstimo." : "A movimentação será removida da conta."} Essa ação não pode ser desfeita.`, [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: () => { void (async () => {
         if (savingRef.current) return;
@@ -152,7 +156,7 @@ export default function TransactionDetailScreen() {
       <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
       <Text style={[styles.specialTitle, { color: colors.text }]}>{transaction.kind === "transfer" ? "Transferência" : "Correção de saldo"}</Text>
       <View style={[styles.specialCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.specialAmount, { color: colors.text }]}>{formatCentsToBRL(transaction.amountCents)}</Text>
+        <Text style={[styles.specialAmount, { color: colors.text }]}>{formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)}</Text>
         <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{transaction.type === "expense" ? "Saída" : "Entrada"} · {transaction.accountName}</Text>
         <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{formatDate(transaction.occurredAt)}{transaction.title ? ` · ${transaction.title}` : ""}</Text>
       </View>
@@ -191,17 +195,12 @@ export default function TransactionDetailScreen() {
 
           <View style={[styles.amountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Label>Valor</Label>
-            <CurrencyInput value={amountCents} onChange={setAmountCents} />
+            <CurrencyInput currency={accounts.find((account) => account.id === accountId)?.currency ?? transaction.accountCurrency} value={amountCents} onChange={setAmountCents} />
           </View>
 
-          <View style={[styles.statusSwitch, { backgroundColor: colors.surfaceMuted }]}>{(["paid", "pending"] as const).map((item) => <Pressable key={item} accessibilityRole="radio" disabled={saving || initialDisbursement} accessibilityState={{ selected: status === item, disabled: saving || initialDisbursement }} onPress={() => setStatus(item)} style={[styles.statusOption, { borderColor: status === item ? colors.border : "transparent", backgroundColor: status === item ? colors.surface : "transparent", opacity: saving || (initialDisbursement && item !== "paid") ? 0.45 : 1 }]}><Text style={{ color: status === item ? colors.text : colors.textMuted, fontSize: 13, fontWeight: "700" }}>{item === "paid" ? "Pago" : "Pendente"}</Text></Pressable>)}</View>
+          <TransactionStatusSelector type={type} status={status} onChange={setStatus} disabled={saving || initialDisbursement} />
 
-          <View style={styles.rowFields}>
-            <View style={styles.field}>
-              <Label>Data</Label>
-              <TextInput accessibilityLabel="Data do lançamento" keyboardType="number-pad" maxLength={10} value={occurredAtText} onChangeText={setOccurredAtText} style={[styles.input, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} />
-            </View>
-          </View>
+          <TransactionDateTimeFields date={occurredAtText} time={occurredTimeText} onDateChange={setOccurredAtText} onTimeChange={setOccurredTimeText} disabled={saving} />
 
           <View style={styles.section}><Label>Categoria</Label><CategorySelector categories={categories} selectedId={categoryId} onSelect={setCategoryId} /></View>
           <View style={styles.section}><Label>Conta</Label><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} /></View>
@@ -242,9 +241,6 @@ const styles = StyleSheet.create({
   typeButton: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   typeText: { fontSize: 14, fontWeight: "700" },
   amountCard: { borderWidth: 1, borderRadius: radius.lg, padding: 18, alignItems: "center" },
-  statusSwitch: { flexDirection: "row", borderRadius: radius.md, padding: 4, marginTop: 16 }, statusOption: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
-  rowFields: { marginTop: 24, flexDirection: "row" },
-  field: { flex: 1, gap: 10 },
   section: { marginTop: 24, gap: 10 },
   optional: { textTransform: "none", letterSpacing: 0, fontWeight: "500" },
   input: { minHeight: 54, borderWidth: 1, borderRadius: radius.md, fontSize: 15, paddingHorizontal: 14 },

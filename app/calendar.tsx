@@ -1,36 +1,61 @@
-import { useCallback, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useFocusEffect, router } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
-import { Screen } from "../src/components/ui";
-import { listTransactions } from "../src/repositories/transactionRepository";
-import { materializeScheduledTransactions } from "../src/repositories/financeRepository";
-import type { Transaction } from "../src/types/transaction";
+import { EmptyState, Screen, SkeletonRows } from "../src/components/ui";
+import { calendarMonthDays, getCalendarDayTransactions, loadCalendarSnapshot } from "../src/services/calendarService";
 import { radius, useAppColors } from "../src/theme";
-import { formatCentsToBRL } from "../src/utils/currency";
+import { formatCentsByCurrency } from "../src/utils/currency";
 
 export default function CalendarScreen() {
-  const db = useSQLiteContext(); const colors = useAppColors(); const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1)); const [items, setItems] = useState<Transaction[]>([]);
-  const start = month.getTime(); const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).getTime();
+  const db = useSQLiteContext(); const colors = useAppColors();
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof loadCalendarSnapshot>> | null>(null);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
+  const loadSequence = useRef(0); const focused = useRef(false);
   const load = useCallback(async () => {
-    await materializeScheduledTransactions(db);
-    setItems((await listTransactions(db)).filter((item) => item.occurredAt >= start && item.occurredAt < end));
-  }, [db, end, start]);
-  useFocusEffect(useCallback(() => { void load().catch((error: unknown) => Alert.alert("Não foi possível carregar o calendário", error instanceof Error ? error.message : "Tente novamente.")); }, [load]));
-  const days = useMemo(() => { const firstWeekday = (month.getDay() + 6) % 7; const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate(); return [...Array(firstWeekday).fill(0), ...Array.from({ length: count }, (_, i) => i + 1)]; }, [month]);
+    if (!focused.current) return;
+    const request = ++loadSequence.current;
+    setLoading(true); setError(null);
+    try {
+      const next = await loadCalendarSnapshot(db, month.getTime());
+      if (request === loadSequence.current) setSnapshot(next);
+    } catch (cause) {
+      if (request === loadSequence.current) setError(cause instanceof Error && /limite numérico/.test(cause.message) ? cause.message : "Não foi possível consultar os movimentos. Nenhum fluxo foi confirmado nesta tentativa.");
+    } finally { if (request === loadSequence.current) setLoading(false); }
+  }, [db, month]);
+  useFocusEffect(useCallback(() => { focused.current = true; void load(); return () => { focused.current = false; loadSequence.current += 1; }; }, [load]));
+  function changeMonth(offset: number) { loadSequence.current += 1; setLoading(true); setSelectedDay(null); setMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1)); }
+  const days = useMemo(() => calendarMonthDays(month), [month]);
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  const txByDay = new Map<number, number>(); for (const item of items) { const day = new Date(item.occurredAt).getDate(); txByDay.set(day, (txByDay.get(day) ?? 0) + (item.type === "income" ? item.amountCents : -item.amountCents)); }
-  const balance = items.filter((item) => item.status === "paid" && item.kind === "standard").reduce((sum, item) => sum + (item.type === "income" ? item.amountCents : -item.amountCents), 0);
+  const visibleSnapshot = !loading && !error ? snapshot : null;
+  const items = visibleSnapshot ? getCalendarDayTransactions(visibleSnapshot, selectedDay) : [];
+  const today = new Date();
   return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
-    <Text onPress={() => router.back()} style={[styles.back, { color: colors.accent }]}>‹ Mais</Text><Text style={[styles.title, { color: colors.text }]}>Calendário</Text>
-    <View style={[styles.calendar, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.monthHeader}><Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft color={colors.text} size={23} /></Pressable><Text style={[styles.month, { color: colors.text }]}>{monthLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight color={colors.text} size={23} /></Pressable></View>
-      <View style={styles.grid}>{["S", "T", "Q", "Q", "S", "S", "D"].map((label, i) => <Text key={`weekday-${i}`} style={[styles.weekday, { color: colors.textMuted }]}>{label}</Text>)}{days.map((day, index) => { const active = !!day && txByDay.has(day); return <View key={`${day}-${index}`} style={[styles.day, day === new Date().getDate() && month.getMonth() === new Date().getMonth() && month.getFullYear() === new Date().getFullYear() && { backgroundColor: colors.accentSoft }]}><Text style={[styles.dayText, { color: day ? colors.text : "transparent" }]}>{day || "·"}</Text>{active && <View style={[styles.dayDot, { backgroundColor: (txByDay.get(day) ?? 0) >= 0 ? colors.positive : colors.negative }]} />}</View>; })}</View>
-      <View style={[styles.summary, { borderTopColor: colors.border }]}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Fluxo do período</Text><Text style={[styles.summaryValue, { color: balance >= 0 ? colors.positive : colors.negative }]}>{formatCentsToBRL(balance)}</Text></View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Voltar" onPress={() => router.back()} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", alignSelf: "flex-start", opacity: pressed ? 0.6 : 1 })}><Text style={{ color: colors.accent }}>‹ Mais</Text></Pressable><Text style={[styles.title, { color: colors.text }]}>Calendário</Text>
+    <View style={[styles.calendar, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.monthHeader}><Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => changeMonth(-1)} style={({ pressed }) => ({ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}><ChevronLeft color={colors.text} size={23} /></Pressable><Text style={[styles.month, { color: colors.text, flex: 1, textAlign: "center" }]}>{monthLabel}</Text><Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => changeMonth(1)} style={({ pressed }) => ({ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}><ChevronRight color={colors.text} size={23} /></Pressable></View>
+      <View style={styles.grid}>{["S", "T", "Q", "Q", "S", "S", "D"].map((label, i) => <Text key={`weekday-${i}`} accessibilityLabel={["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"][i]} style={[styles.weekday, { color: colors.textMuted }]}>{label}</Text>)}{days.map((day, index) => {
+        if (day === null) return <View key={`blank-${index}`} accessibilityElementsHidden style={styles.day} />;
+        const count = visibleSnapshot?.dayCounts[day] ?? 0;
+        const selected = selectedDay === day;
+        const isToday = day === today.getDate() && month.getMonth() === today.getMonth() && month.getFullYear() === today.getFullYear();
+        return <Pressable key={day} accessibilityRole="button" accessibilityLabel={`${day} de ${monthLabel}${isToday ? ", hoje" : ""}, ${visibleSnapshot ? `${count} movimentos` : "movimentos não consultados"}`} accessibilityState={{ selected, disabled: !visibleSnapshot }} disabled={!visibleSnapshot} onPress={() => setSelectedDay(day)} style={({ pressed }) => [styles.day, { height: 44, borderWidth: 1, borderColor: selected ? colors.accent : "transparent", backgroundColor: selected || isToday ? colors.accentSoft : "transparent", opacity: pressed ? 0.6 : 1 }]}><Text style={[styles.dayText, { color: colors.text }]}>{day}</Text>{count > 0 && <View accessibilityElementsHidden style={[styles.dayDot, { backgroundColor: colors.accent }]} />}</Pressable>;
+      })}</View>
+      <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 10 }}>O ponto indica movimentos, incluindo pendências. Toque em um dia para filtrar.</Text>
+      {visibleSnapshot && <>
+        <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 16 }}>Fluxo realizado do mês · sem conversão cambial</Text>
+        {visibleSnapshot.summaries.map((summary) => <View key={summary.currency} style={[styles.summary, { borderTopColor: colors.border }]}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{summary.currency}</Text><Text style={[styles.summaryValue, { color: summary.balance >= 0 ? colors.positive : colors.negative }]}>{formatCentsByCurrency(summary.balance, summary.currency)}</Text></View>)}
+      </>}
     </View>
-    <Text style={[styles.section, { color: colors.text }]}>Movimentações</Text><View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>{items.length ? items.map((item, index) => <TransactionItem key={item.id} transaction={item} isLast={index === items.length - 1} onPress={() => router.push(`/transaction/${item.id}`)} />) : <Text style={[styles.empty, { color: colors.textMuted }]}>Nenhuma movimentação neste mês.</Text>}</View>
+    {loading ? <View accessibilityLiveRegion="polite" style={{ marginTop: 20 }}><Text style={{ color: colors.textMuted }}>Carregando calendário…</Text><SkeletonRows count={4} /></View> : error ? <EmptyState title="Calendário indisponível" description={error} actionLabel="Tentar novamente" onAction={() => void load()} /> : visibleSnapshot && <>
+      <Text accessibilityRole="header" style={[styles.section, { color: colors.text }]}>{selectedDay === null ? "Movimentações do mês" : `Movimentações de ${selectedDay} de ${monthLabel}`}</Text>
+      {selectedDay !== null && <Pressable accessibilityRole="button" onPress={() => setSelectedDay(null)} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", alignSelf: "flex-start", opacity: pressed ? 0.6 : 1 })}><Text style={{ color: colors.accent }}>Ver mês inteiro</Text></Pressable>}
+      <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>{items.length ? items.map((item, index) => <TransactionItem key={item.id} transaction={item} isLast={index === items.length - 1} onPress={() => router.push(`/transaction/${item.id}`)} />) : <EmptyState embedded title={selectedDay === null ? "Sem movimentos neste mês" : "Sem movimentos neste dia"} description={selectedDay === null ? "Crie um lançamento ou consulte outro mês." : "Escolha outro dia ou veja o mês inteiro."} actionLabel={selectedDay === null ? "Criar lançamento" : "Ver mês inteiro"} onAction={selectedDay === null ? () => router.push("/quick-entry") : () => setSelectedDay(null)} />}</View>
+    </>}
   </Screen></ScrollView><BottomNav /></View>;
 }
 

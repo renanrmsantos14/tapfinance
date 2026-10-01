@@ -42,7 +42,7 @@ test("v4 migration never guesses legacy initial transaction and preserves its ba
   try {
     const id = await createLoan(db, input);
     const before = sqlite.prepare("SELECT * FROM transactions").all();
-    sqlite.exec("ALTER TABLE loans DROP COLUMN initial_transaction_id; DELETE FROM schema_migrations WHERE version >= 5");
+    sqlite.exec("ALTER TABLE loans DROP COLUMN initial_transaction_id; ALTER TABLE budgets DROP COLUMN currency; DELETE FROM schema_migrations WHERE version >= 5");
     await initializeDatabase(db); await initializeDatabase(db);
     assert.equal((await listLoans(db))[0].initialTransactionId, null);
     assert.equal((await listLoans(db))[0].remainingCents, 50000);

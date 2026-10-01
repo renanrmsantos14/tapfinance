@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AppState, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, Download, ExternalLink, FileUp, Info, LockKeyhole, RotateCcw, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
@@ -11,7 +11,8 @@ import { exportTransactions } from "../src/services/exportService";
 import { exportFullBackup, inspectBackupFile, restoreFullBackup, shareRecoveryBackup } from "../src/services/backupService";
 import { importCsv, inspectCsvFile } from "../src/services/importService";
 import { getDiagnosticReport, installUpdate, isAssistantRoleAvailable, isAssistantRoleHeld, openAssistantSettings, requestAssistantRole, startDiagnosticTest } from "../src/services/assistantService";
-import { checkForUpdate } from "../src/services/updateService";
+import { checkForUpdates, type Update } from "../src/services/updateService";
+import { UpdateVersionPicker } from "../src/components/UpdateVersionPicker";
 import { canPostBankAlerts, hasBankNotificationAccess, openBankNotificationAccessSettings, requestBankAlertPermission } from "../src/services/bankNotificationService";
 import { radius, useAppColors } from "../src/theme";
 
@@ -24,6 +25,13 @@ export default function SettingsScreen() {
   const [assistantHeld, setAssistantHeld] = useState(false);
   const [checkingAssistant, setCheckingAssistant] = useState(true);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updatePickerOpen, setUpdatePickerOpen] = useState(false);
+  const [updates, setUpdates] = useState<Update[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const updateBusy = useRef(false); const updateSequence = useRef(0); const downloadInProgress = useRef(false);
+  useEffect(() => () => { updateSequence.current += 1; }, []);
   const [bankAccess, setBankAccess] = useState(false);
   const [bankAlerts, setBankAlerts] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
@@ -172,19 +180,42 @@ export default function SettingsScreen() {
   }
 
   async function checkUpdate() {
-    if (checkingUpdate) return;
-    setCheckingUpdate(true);
+    if (updateBusy.current) return;
+    updateBusy.current = true;
+    const request = ++updateSequence.current;
+    setUpdatePickerOpen(true); setCheckingUpdate(true); setUpdateError(null); setUpdates([]); setSelectedVersion(null);
     try {
-      const update = await checkForUpdate(appVersion);
-      if (!update) {
-        Alert.alert("App atualizado", `Você já está na versão ${appVersion}.`);
-        return;
-      }
-      await installUpdate(update.url, update.digest);
+      const available = await checkForUpdates(appVersion);
+      if (request !== updateSequence.current) return;
+      setUpdates(available); setSelectedVersion(available[0]?.version ?? null);
     } catch (error) {
-      Alert.alert("Não foi possível atualizar", error instanceof Error ? error.message : "Confira a conexão e tente novamente.");
+      if (request === updateSequence.current) setUpdateError(error instanceof Error ? error.message : "Confira a conexão e tente novamente.");
     } finally {
-      setCheckingUpdate(false);
+      if (request === updateSequence.current) { updateBusy.current = false; setCheckingUpdate(false); }
+    }
+  }
+
+  function closeUpdates() {
+    if (downloadInProgress.current) return;
+    updateSequence.current += 1; updateBusy.current = false;
+    setCheckingUpdate(false); setUpdatePickerOpen(false);
+  }
+
+  async function downloadSelectedUpdate() {
+    if (updateBusy.current) return;
+    const selected = updates.find((item) => item.version === selectedVersion);
+    if (!selected) return;
+    updateBusy.current = true; downloadInProgress.current = true; setDownloadingUpdate(true); setUpdateError(null);
+    const request = ++updateSequence.current;
+    try {
+      const opened = await installUpdate(selected.url, selected.digest);
+      if (!opened) throw new Error("Não foi possível abrir o instalador Android.");
+      if (request === updateSequence.current) setUpdatePickerOpen(false);
+    } catch (error) {
+      if (request === updateSequence.current) setUpdateError(error instanceof Error ? error.message : "Download não concluído. Tente novamente.");
+    } finally {
+      downloadInProgress.current = false;
+      if (request === updateSequence.current) { updateBusy.current = false; setDownloadingUpdate(false); }
     }
   }
 
@@ -299,14 +330,15 @@ export default function SettingsScreen() {
           <View style={[styles.versionCard, { borderColor: colors.border }]}>
             <Text style={[styles.versionName, { color: colors.text }]}>TapFinance</Text>
             <Text style={[styles.version, { color: colors.textMuted }]}>Versão {appVersion} · build {androidVersionCode ?? "—"}</Text>
-            {Platform.OS === "android" && <Pressable accessibilityRole="button" disabled={checkingUpdate} onPress={() => void checkUpdate()} style={({ pressed }) => [styles.updateButton, { backgroundColor: colors.accent, opacity: checkingUpdate || pressed ? 0.65 : 1 }]}>
+            {Platform.OS === "android" && <Pressable accessibilityRole="button" accessibilityState={{ disabled: checkingUpdate || downloadingUpdate }} disabled={checkingUpdate || downloadingUpdate} onPress={() => void checkUpdate()} style={({ pressed }) => [styles.updateButton, { backgroundColor: colors.accent, opacity: checkingUpdate || downloadingUpdate || pressed ? 0.65 : 1 }]}>
               <Download color="#fff" size={17} />
-              <Text style={styles.updateText}>{checkingUpdate ? "Verificando ou baixando…" : "Atualizar app"}</Text>
+              <Text style={styles.updateText}>{checkingUpdate ? "Verificando…" : downloadingUpdate ? "Baixando…" : "Verificar atualizações"}</Text>
             </Pressable>}
           </View>
         </Screen>
       </ScrollView>
       <BottomNav />
+      <UpdateVersionPicker visible={updatePickerOpen} installedVersion={appVersion} updates={updates} selectedVersion={selectedVersion} checking={checkingUpdate} downloading={downloadingUpdate} error={updateError} onSelect={setSelectedVersion} onClose={closeUpdates} onRetry={() => void checkUpdate()} onDownload={() => void downloadSelectedUpdate()} />
     </View>
   );
 }

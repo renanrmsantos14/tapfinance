@@ -13,9 +13,10 @@ import type { Transaction } from "../src/types/transaction";
 import type { Category, TransactionType } from "../src/types/category";
 import type { Account } from "../src/types/finance";
 import { radius, useAppColors } from "../src/theme";
-import { formatCentsToBRL } from "../src/utils/currency";
+import { formatCentsByCurrency } from "../src/utils/currency";
+import { summarizeTransactionsByCurrency } from "../src/utils/currencyTotals";
 import { formatDate } from "../src/utils/dates";
-import { filterTransactions, transactionDayKey } from "../src/utils/transactionFilters";
+import { filterTransactions, getTransactionTagOptions, transactionDayKey } from "../src/utils/transactionFilters";
 
 type Filter = "all" | TransactionType;
 
@@ -32,6 +33,7 @@ export default function TransactionsScreen() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [status, setStatus] = useState<"all" | Transaction["status"]>("all");
   const [kind, setKind] = useState<"all" | Transaction["kind"]>("all");
+  const [tag, setTag] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -54,15 +56,18 @@ export default function TransactionsScreen() {
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  const filteredItems = useMemo(() => filterTransactions(items, { month, type: filter, query, accountId, categoryId, status, kind }), [items, month, filter, query, accountId, categoryId, status, kind]);
-  const hasActiveFilters = filter !== "all" || !!query.trim() || !!accountId || !!categoryId || status !== "all" || kind !== "all";
-  function resetFilters() { setFilter("all"); setQuery(""); setAccountId(null); setCategoryId(null); setStatus("all"); setKind("all"); }
-  const totals = useMemo(() => filteredItems.reduce((sum, item) => {
-    if (item.status !== "paid" || item.kind !== "standard") return sum;
-    if (item.type === "income") sum.income += item.amountCents; else sum.expense += item.amountCents;
-    return sum;
-  }, { income: 0, expense: 0 }), [filteredItems]);
-  const total = totals.income - totals.expense;
+  const tagOptions = useMemo(() => getTransactionTagOptions(items, tag), [items, tag]);
+  const filteredItems = useMemo(() => filterTransactions(items, { month, type: filter, query, accountId, categoryId, status, kind, tag }), [items, month, filter, query, accountId, categoryId, status, kind, tag]);
+  const hasActiveFilters = filter !== "all" || !!query.trim() || !!accountId || !!categoryId || status !== "all" || kind !== "all" || tag !== null;
+  function resetFilters() { setFilter("all"); setQuery(""); setAccountId(null); setCategoryId(null); setStatus("all"); setKind("all"); setTag(null); }
+  const totals = useMemo(() => {
+    try {
+      const currencies = accounts.filter((account) => !accountId || account.id === accountId).map((account) => account.currency);
+      return { summaries: summarizeTransactionsByCurrency(filteredItems, currencies), error: null };
+    } catch (error) {
+      return { summaries: [], error: error instanceof Error ? error.message : "Totais indisponíveis." };
+    }
+  }, [filteredItems, accounts, accountId]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -88,11 +93,16 @@ export default function TransactionsScreen() {
           <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><Search color={colors.textMuted} size={17} /><TextInput accessibilityLabel="Buscar transações" placeholder="Buscar transações" placeholderTextColor={colors.textMuted} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: colors.text }]} returnKeyType="search" /></View>
 
           <Reveal delay={45}>
-            <View style={[styles.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Despesas</Text><Text style={[styles.summaryValue, { color: colors.negative }]}>{formatCentsToBRL(totals.expense)}</Text></View>
-              <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Receitas</Text><Text style={[styles.summaryValue, { color: colors.positive }]}>{formatCentsToBRL(totals.income)}</Text></View>
-              <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Saldo</Text><Text style={[styles.summaryValue, { color: total >= 0 ? colors.text : colors.negative }]}>{formatCentsToBRL(total)}</Text></View>
-            </View>
+            {!loading && !loadError && <>
+              {totals.error ? <Text accessibilityRole="alert" style={{ color: colors.negative, marginBottom: 14 }}>{totals.error}</Text> : <>
+                {totals.summaries.length > 1 && <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 10 }}>Totais separados por moeda · sem conversão cambial</Text>}
+                {totals.summaries.map((summary) => <View key={summary.currency} style={[styles.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Despesas · {summary.currency}</Text><Text style={[styles.summaryValue, { color: colors.negative }]}>{formatCentsByCurrency(summary.expense, summary.currency)}</Text></View>
+                  <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Receitas · {summary.currency}</Text><Text style={[styles.summaryValue, { color: colors.positive }]}>{formatCentsByCurrency(summary.income, summary.currency)}</Text></View>
+                  <View style={styles.summaryItem}><Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Saldo · {summary.currency}</Text><Text style={[styles.summaryValue, { color: summary.balance >= 0 ? colors.text : colors.negative }]}>{formatCentsByCurrency(summary.balance, summary.currency)}</Text></View>
+                </View>)}
+              </>}
+            </>}
           </Reveal>
 
           <View accessibilityRole="tablist" style={[styles.filters, { backgroundColor: colors.surfaceMuted }]}>
@@ -119,6 +129,8 @@ export default function TransactionsScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{[{ id: null, name: "Todas" }, ...accounts].map((account) => <Pressable key={account.id ?? "all"} accessibilityRole="radio" accessibilityState={{ selected: accountId === account.id }} onPress={() => setAccountId(account.id)} style={[styles.chip, { borderColor: accountId === account.id ? colors.accent : colors.border, backgroundColor: accountId === account.id ? colors.accentSoft : colors.background }]}><Text style={{ color: accountId === account.id ? colors.accent : colors.textMuted, fontSize: 12 }}>{account.name}</Text></Pressable>)}</ScrollView>
             <Text style={[styles.advancedLabel, { color: colors.textMuted }]}>CATEGORIAS</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{[{ id: null, name: "Todas" }, ...categories.filter((category) => filter === "all" || category.type === filter)].map((category) => <Pressable key={category.id ?? "all"} accessibilityRole="radio" accessibilityState={{ selected: categoryId === category.id }} onPress={() => setCategoryId(category.id)} style={[styles.chip, { borderColor: categoryId === category.id ? colors.accent : colors.border, backgroundColor: categoryId === category.id ? colors.accentSoft : colors.background }]}><Text style={{ color: categoryId === category.id ? colors.accent : colors.textMuted, fontSize: 12 }}>{category.name}</Text></Pressable>)}</ScrollView>
+            <Text style={[styles.advancedLabel, { color: colors.textMuted }]}>TAGS</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{[{ value: null, label: "Todas" }, { value: "", label: "Sem tags" }, ...tagOptions.map((value) => ({ value, label: value }))].map((option) => <Pressable key={option.value === null ? "all-tags" : `tag:${option.value}`} accessibilityRole="radio" accessibilityLabel={`Filtrar tags: ${option.label}`} accessibilityState={{ selected: tag === option.value }} onPress={() => setTag(option.value)} style={({ pressed }) => [styles.chip, { minHeight: 44, borderColor: tag === option.value ? colors.accent : colors.border, backgroundColor: tag === option.value ? colors.accentSoft : colors.background, opacity: pressed ? 0.7 : 1 }]}><Text style={{ color: tag === option.value ? colors.accent : colors.textMuted, fontSize: 12 }}>{option.label}</Text></Pressable>)}</ScrollView>
             <Text style={[styles.advancedLabel, { color: colors.textMuted }]}>SITUAÇÃO</Text>
             <View style={styles.chipRow}>{([ ["all", "Todas"], ["paid", "Pagas"], ["pending", "Pendentes"] ] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: status === value }} onPress={() => setStatus(value)} style={[styles.chip, { borderColor: status === value ? colors.accent : colors.border, backgroundColor: status === value ? colors.accentSoft : colors.background }]}><Text style={{ color: status === value ? colors.accent : colors.textMuted, fontSize: 12 }}>{label}</Text></Pressable>)}</View>
             <Text style={[styles.advancedLabel, { color: colors.textMuted }]}>NATUREZA</Text>

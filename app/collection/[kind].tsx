@@ -7,13 +7,14 @@ import { BottomNav } from "../../src/components/BottomNav";
 import { AccountSelector } from "../../src/components/AccountSelector";
 import { CurrencyInput } from "../../src/components/CurrencyInput";
 import { EmptyState, PrimaryButton, Screen, useReducedMotion } from "../../src/components/ui";
-import { archiveAccount, createAccount, createGoal, createLoan, createSchedule, deleteSchedule, listAccounts, listGoals, listLoans, listSchedules, moveAccount, restoreAccount, setPrimaryAccount, setScheduleActive, setTrackerArchived, updateAccount, updateSchedule } from "../../src/repositories/financeRepository";
-import { archiveCategory, createCategory, listCategories, moveCategory, restoreCategory, updateCategory } from "../../src/repositories/categoryRepository";
+import { archiveAccount, createAccount, createGoal, createLoan, createSchedule, deleteSchedule, moveAccount, restoreAccount, setPrimaryAccount, setScheduleActive, setTrackerArchived, updateAccount, updateSchedule } from "../../src/repositories/financeRepository";
+import { archiveCategory, createCategory, moveCategory, restoreCategory, updateCategory } from "../../src/repositories/categoryRepository";
 import type { Account, Goal, Loan, Schedule } from "../../src/types/finance";
 import type { Category } from "../../src/types/category";
 import { radius, useAppColors } from "../../src/theme";
-import { formatCentsToBRL, parseCurrencyToCents } from "../../src/utils/currency";
+import { formatCentsByCurrency, formatCentsToBRL, parseCurrencyToCents } from "../../src/utils/currency";
 import { formatDate, parseDateInput } from "../../src/utils/dates";
+import { loadCollectionSnapshot } from "../../src/services/collectionService";
 
 type Kind = "accounts" | "goals" | "loans" | "schedules" | "categories";
 type Entry = Account | Goal | Loan | Schedule | Category;
@@ -53,25 +54,21 @@ export default function CollectionScreen() {
   const [showArchived, setShowArchived] = useState(false);
   const [changingCatalog, setChangingCatalog] = useState(false);
   const catalogChangeInProgress = useRef(false);
+  const loadSequence = useRef(0);
+  const focused = useRef(false);
 
   const load = useCallback(async () => {
+    if (!focused.current) return;
+    const request = ++loadSequence.current;
     setLoading(true); setLoadError(null);
     try {
-    if (kind === "accounts") setItems(await listAccounts(db, true));
-    else if (kind === "goals") setItems(await listGoals(db, true));
-    else if (kind === "loans") setItems(await listLoans(db, true));
-    else if (kind === "schedules") setItems(await listSchedules(db, true));
-    else {
-      const [expenses, incomes] = await Promise.all([listCategories(db, "expense", true), listCategories(db, "income", true)]);
-      setItems([...expenses, ...incomes]);
-    }
-    const [expenses, incomes] = await Promise.all([listCategories(db, "expense"), listCategories(db, "income")]);
-    setCategories([...expenses, ...incomes]);
-    setAccounts(await listAccounts(db));
-    } catch (error) { setLoadError(error instanceof Error ? error.message : "Tente novamente."); }
-    finally { setLoading(false); }
+      const next = await loadCollectionSnapshot(db, kind);
+      if (request !== loadSequence.current) return;
+      setItems(next.items); setCategories(next.categories); setAccounts(next.accounts);
+    } catch (error) { if (request === loadSequence.current) setLoadError(error instanceof Error ? error.message : "Tente novamente."); }
+    finally { if (request === loadSequence.current) setLoading(false); }
   }, [db, kind]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { focused.current = true; void load(); return () => { focused.current = false; loadSequence.current += 1; }; }, [load]));
 
   const title = labels[kind];
   const typeOptions = useMemo(() => kind === "accounts" ? ["checking", "cash", "savings", "credit", "investment"] : kind === "loans" ? ["lent", "borrowed"] : kind === "goals" ? ["income", "expense"] : kind === "schedules" ? ["monthly", "weekly", "yearly", "once"] : ["expense", "income"], [kind]);
@@ -94,7 +91,7 @@ export default function CollectionScreen() {
   }
 
   function openCreate() {
-    if (catalogChangeInProgress.current || saveInProgress.current) return;
+    if (loading || loadError || catalogChangeInProgress.current || saveInProgress.current) return;
     setEditingSchedule(null); setUpdateFuturePending(false);
     setEditingCategory(null); setEditingAccount(null); setName(""); setAmount(""); setType("expense"); setParentId(null);
     setCategoryId(categories.find((category) => category.id === "outros-despesa")?.id ?? categories.find((category) => category.type === "expense")?.id ?? "");
@@ -217,7 +214,7 @@ export default function CollectionScreen() {
   }
 
   function detail(item: Entry) {
-    if (kind === "accounts") { const value = item as Account; return `${formatCentsToBRL(value.balanceCents)} · ${value.currency}${value.isPrimary ? " · Principal" : ""}${value.isArchived ? " · Arquivada" : ""}`; }
+    if (kind === "accounts") { const value = item as Account; return `${formatCentsByCurrency(value.balanceCents, value.currency)}${value.isPrimary ? " · Principal" : ""}${value.isArchived ? " · Arquivada" : ""}`; }
     if (kind === "goals") { const value = item as Goal; return `${formatCentsToBRL(value.progressCents)} de ${formatCentsToBRL(value.targetCents)}${value.isArchived ? " · Arquivada" : ""}`; }
     if (kind === "loans") { const value = item as Loan; return `${value.direction === "lent" ? "A receber" : "A pagar"} · ${formatCentsToBRL(value.remainingCents)} restantes${value.isArchived ? " · Arquivado" : ""}`; }
     if (kind === "schedules") { const value = item as Schedule; return `${formatCentsToBRL(value.amountCents)} · ${typeLabels[value.frequency]}${value.isSubscription ? " · Assinatura" : ""}\n${value.isActive ? `Novas a partir de ${formatDate(value.nextAt)}` : "Inativa · lançamentos preservados"}`; }
@@ -227,7 +224,7 @@ export default function CollectionScreen() {
   }
 
   return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
-    <View style={styles.header}><View><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={[styles.back, { color: colors.accent }]}>‹ Mais</Text></Pressable><Text style={[styles.title, { color: colors.text }]}>{title}</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>{items.length} {items.length === 1 ? "item" : "itens"}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Adicionar ${title}`} onPress={openCreate} style={[styles.add, { backgroundColor: colors.surfaceStrong }]}><Plus color={colors.text} size={21} /></Pressable></View>
+    <View style={styles.header}><View><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={[styles.back, { color: colors.accent }]}>‹ Mais</Text></Pressable><Text style={[styles.title, { color: colors.text }]}>{title}</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>{items.length} {items.length === 1 ? "item" : "itens"}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Adicionar ${title}`} accessibilityState={{ disabled: loading || !!loadError || changingCatalog || saving }} disabled={loading || !!loadError || changingCatalog || saving} onPress={openCreate} style={({ pressed }) => [styles.add, { backgroundColor: colors.surfaceStrong, opacity: loading || loadError || changingCatalog || saving ? 0.4 : pressed ? 0.7 : 1 }]}><Plus color={colors.text} size={21} /></Pressable></View>
     {changingSchedule && <Text accessibilityLiveRegion="polite" style={{ color: colors.textMuted, marginBottom: 12 }}>Atualizando recorrência…</Text>}
     {hasArchiveFilter && <View style={[styles.choices, { marginBottom: 16 }]}>{([false, true] as const).map((archived) => <Pressable key={String(archived)} accessibilityRole="radio" accessibilityState={{ selected: showArchived === archived, disabled: changingCatalog }} disabled={changingCatalog} onPress={() => setShowArchived(archived)} style={({ pressed }) => [styles.choice, { minHeight: 44, borderColor: showArchived === archived ? colors.accent : colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={{ color: showArchived === archived ? colors.accent : colors.textMuted }}>{archived ? "Arquivados" : "Ativos"} · {items.filter((item) => isArchived(item) === archived).length}</Text></Pressable>)}</View>}
     {changingCatalog && <Text accessibilityLiveRegion="polite" style={{ color: colors.textMuted, marginBottom: 12 }}>Atualizando cadastro…</Text>}
@@ -255,7 +252,7 @@ export default function CollectionScreen() {
     <Pressable accessibilityRole="button" onPress={() => { if (scheduleActions) confirmScheduleDelete(scheduleActions); }} style={styles.scheduleAction}><Text style={{ color: colors.negative }}>Excluir regra</Text></Pressable>
   </View> : <ScrollView keyboardShouldPersistTaps="handled" accessibilityViewIsModal style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text }]}>{editingCategory ? "Editar categoria" : editingAccount ? "Editar conta" : editingSchedule ? "Editar recorrência" : kind === "schedules" ? "Nova recorrência" : "Novo item"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar formulário" disabled={saving} onPress={() => setOpen(false)}><X color={colors.textMuted} size={22} /></Pressable></View>
     <Text style={[styles.label, { color: colors.textMuted }]}>NOME</Text><TextInput accessibilityLabel="Nome" placeholder="Nome" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]} />
-    {(kind !== "categories") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "accounts" ? "SALDO INICIAL" : "VALOR"}</Text><CurrencyInput value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsToBRL(cents))} /></>}
+    {(kind !== "categories") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "accounts" ? "SALDO INICIAL" : "VALOR"}</Text><CurrencyInput currency={kind === "accounts" ? editingAccount?.currency : kind === "schedules" || kind === "loans" ? accounts.find((account) => account.id === accountId)?.currency : undefined} value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsToBRL(cents))} /></>}
     {(kind === "schedules" || kind === "loans") && <><Text style={[styles.label, { color: colors.textMuted }]}>CONTA</Text><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} /></>}
     {(kind === "schedules" || kind === "goals" || kind === "loans") && <><Text style={[styles.label, { color: colors.textMuted }]}>{kind === "schedules" ? editingSchedule ? "PRÓXIMA A GERAR" : "PRIMEIRA OCORRÊNCIA" : "PRAZO (OPCIONAL)"}</Text><TextInput accessibilityLabel={kind === "schedules" ? editingSchedule ? "Data da próxima ocorrência a gerar" : "Data da primeira ocorrência" : "Prazo opcional"} keyboardType="number-pad" placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} value={dateInput} onChangeText={(value) => { const digits = value.replace(/\D/g, "").slice(0, 8); setDateInput(digits.length <= 2 ? digits : digits.length <= 4 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`); }} maxLength={10} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]} /></>}
     {editingSchedule && <><Text style={{ color: colors.textMuted, lineHeight: 20, marginTop: 12 }}>Alterações valem para novas ocorrências. A data não move lançamentos já gerados. Uma regra inativa continua inativa até você retomá-la.</Text><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: updateFuturePending }} onPress={() => setUpdateFuturePending((value) => !value)} style={styles.subscriptionToggle}><View style={[styles.checkbox, { borderColor: updateFuturePending ? colors.accent : colors.border, backgroundColor: updateFuturePending ? colors.accent : "transparent" }]} /><Text style={{ color: colors.text, fontSize: 13, flex: 1 }}>Atualizar também valor, conta, categoria, tipo e título dos pendentes futuros</Text></Pressable><Text style={{ color: colors.textMuted, lineHeight: 20 }}>Pagos, pendentes vencidos, notas e datas existentes serão preservados.</Text></>}

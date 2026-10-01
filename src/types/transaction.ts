@@ -14,6 +14,7 @@ export type Transaction = {
   updatedAt: number;
   accountId: string;
   accountName: string;
+  accountCurrency?: string;
   title: string | null;
   notes: string | null;
   tags: string[];

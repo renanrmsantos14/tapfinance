@@ -9,6 +9,9 @@ import { AccountSelector } from "../src/components/AccountSelector";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { TransactionFormReferenceStatus } from "../src/components/TransactionFormReferenceStatus";
 import { TransactionMetadataFields } from "../src/components/TransactionMetadataFields";
+import { TransactionDateTimeFields } from "../src/components/TransactionDateTimeFields";
+import { TransactionStatusSelector } from "../src/components/TransactionStatusSelector";
+import { formatDate, formatTime, replaceDateAndTime } from "../src/utils/dates";
 import { normalizeTransactionTags } from "../src/utils/transactionTags";
 import { Label, PrimaryButton, QuietButton, Reveal, Screen } from "../src/components/ui";
 import { createTransaction, suggestCategoryFromHistory } from "../src/repositories/transactionRepository";
@@ -25,6 +28,7 @@ export default function QuickEntryScreen() {
   const colors = useAppColors();
   const params = useLocalSearchParams<{ assistant?: string; bankSuggestion?: string; loanId?: string; goalId?: string }>();
   const [type, setType] = useState<TransactionType>("expense");
+  const [status, setStatus] = useState<"paid" | "pending">("paid");
   const [amountCents, setAmountCents] = useState(0);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [linkedId, setLinkedId] = useState<string | null>(null);
@@ -34,6 +38,9 @@ export default function QuickEntryScreen() {
   const [title, setTitle] = useState(""); const titleEdited = useRef(false);
   const [notes, setNotes] = useState(""); const [tags, setTags] = useState<string[]>([]); const [tagInput, setTagInput] = useState("");
   const [occurredAt, setOccurredAt] = useState(Date.now());
+  const [dateText, setDateText] = useState(() => formatDate(occurredAt));
+  const [timeText, setTimeText] = useState(() => formatTime(occurredAt));
+  const [useCurrentTime, setUseCurrentTime] = useState(true);
   const [suggestionId, setSuggestionId] = useState<string | null>(null);
   const [categorySuggested, setCategorySuggested] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -68,10 +75,12 @@ export default function QuickEntryScreen() {
     }
     setSuggestionId(suggestion.id);
     setType(suggestion.type);
+    setStatus("paid");
     setAmountCents(suggestion.amountCents);
     setCategoryId(suggestion.type === "income" ? "outros-receita" : "outros-despesa");
     setDescription(suggestion.description);
     setOccurredAt(suggestion.occurredAt);
+    setDateText(formatDate(suggestion.occurredAt)); setTimeText(formatTime(suggestion.occurredAt)); setUseCurrentTime(false);
     void suggestCategoryFromHistory(db, suggestion.type, suggestion.description).then((category) => {
       if (active && category && !categoryTouchedRef.current) {
         setCategoryId(category);
@@ -108,7 +117,9 @@ export default function QuickEntryScreen() {
     let nextTags: string[];
     try { nextTags = normalizeTransactionTags([...tags, ...(tagInput.trim() ? [tagInput] : [])]); }
     catch (reason) { Alert.alert("Confira as tags", reason instanceof Error ? reason.message : "Tags inválidas."); return; }
-    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId: linkedGoal, loanId: linkedLoan, description, title: titleEdited.current ? title || null : undefined, notes, tags: nextTags, occurredAt: suggestionId ? occurredAt : Date.now() };
+    const selectedTime = useCurrentTime ? Date.now() : replaceDateAndTime(occurredAt, dateText, timeText);
+    if (selectedTime === null) { Alert.alert("Confira data e hora", "Use DD/MM/AAAA e HH:mm (00:00 a 23:59). Os campos foram preservados."); return; }
+    const draft = { type, status, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId: linkedGoal, loanId: linkedLoan, description, title: titleEdited.current ? title || null : undefined, notes, tags: nextTags, occurredAt: selectedTime };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -186,7 +197,7 @@ export default function QuickEntryScreen() {
           <Reveal delay={45}>
             <View style={[styles.amountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Label>Valor</Label>
-              <CurrencyInput value={amountCents} onChange={(value) => { editedFields.current.amount = true; setAmountCents(value); }} autoFocus />
+              <CurrencyInput currency={accounts.find((account) => account.id === accountId)?.currency} value={amountCents} onChange={(value) => { editedFields.current.amount = true; setAmountCents(value); }} autoFocus />
               <Text style={[styles.hint, { color: colors.textMuted }]}>Use apenas números — os centavos entram automaticamente.</Text>
             </View>
           </Reveal>
@@ -214,6 +225,9 @@ export default function QuickEntryScreen() {
             </View>
           </View>
 
+          <TransactionStatusSelector type={type} status={status} onChange={setStatus} disabled={saving} />
+          <TransactionDateTimeFields date={dateText} time={timeText} disabled={saving} onDateChange={(value) => { setUseCurrentTime(false); setDateText(value); }} onTimeChange={(value) => { setUseCurrentTime(false); setTimeText(value); }} />
+          <Pressable accessibilityRole="button" disabled={saving} accessibilityState={{ disabled: saving }} onPress={() => { const now = Date.now(); setOccurredAt(now); setDateText(formatDate(now)); setTimeText(formatTime(now)); setUseCurrentTime(true); }} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", opacity: saving ? 0.5 : pressed ? 0.7 : 1 })}><Text style={{ color: colors.accent }}>{useCurrentTime ? "Usando o horário atual ao salvar" : "Usar data e hora atuais"}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: metadataOpen, disabled: saving }} disabled={saving} onPress={() => setMetadataOpen((value) => !value)} style={({ pressed }) => ({ minHeight: 44, marginTop: 18, justifyContent: "center", opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.accent }}>{metadataOpen ? "Ocultar detalhes e tags" : "Adicionar título, notas e tags"}</Text></Pressable>
           {metadataOpen && <TransactionMetadataFields title={title} notes={notes} tags={tags} tagInput={tagInput} disabled={saving} onTitleChange={(value) => { titleEdited.current = true; setTitle(value); }} onNotesChange={setNotes} onTagsChange={setTags} onTagInputChange={setTagInput} />}
           <PrimaryButton disabled={saving || !canSave} accessibilityLabel="Salvar lançamento" onPress={() => void save()} style={styles.save}>

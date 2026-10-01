@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ArrowDownLeft, ArrowUpRight, Plus, WalletCards } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -6,13 +6,13 @@ import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
 import { EmptyState, PrimaryButton, Reveal, Screen, SectionHeader, SkeletonRows } from "../src/components/ui";
-import { getMonthSummary, listTransactions } from "../src/repositories/transactionRepository";
+import { loadHomeSnapshot } from "../src/services/homeService";
 import type { Transaction } from "../src/types/transaction";
 import { radius, useAppColors } from "../src/theme";
-import { formatCentsToBRL } from "../src/utils/currency";
+import { formatCentsByCurrency, formatCentsToBRL } from "../src/utils/currency";
 import { formatMonthLabel } from "../src/utils/dates";
-import { listAccounts, listBudgets, listGoals, listLoans, materializeScheduledTransactions } from "../src/repositories/financeRepository";
 import type { Account, Budget, Goal, Loan } from "../src/types/finance";
+import type { CurrencySummary } from "../src/utils/currencyTotals";
 
 function currentPeriod() {
   const now = new Date();
@@ -23,7 +23,7 @@ export default function HomeScreen() {
   const db = useSQLiteContext();
   const colors = useAppColors();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [summary, setSummary] = useState({ income: 0, expense: 0 });
+  const [summaries, setSummaries] = useState<CurrencySummary[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -33,38 +33,26 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [period, setPeriod] = useState(currentPeriod);
+  const loadSequence = useRef(0); const focused = useRef(false);
 
   const load = useCallback(async () => {
+    if (!focused.current) return;
+    const request = ++loadSequence.current;
+    setLoading(true);
     setLoadError(false);
     try {
-      const nextPeriod = currentPeriod();
-      await materializeScheduledTransactions(db);
-      const [nextTransactions, nextSummary, nextAccounts, nextBudgets, nextGoals, nextLoans] = await Promise.all([
-        listTransactions(db),
-        getMonthSummary(db, nextPeriod.start, nextPeriod.end),
-        listAccounts(db),
-        listBudgets(db),
-        listGoals(db),
-        listLoans(db),
-      ]);
-      setPeriod(nextPeriod);
-      setTransactions(nextTransactions.filter((item) => item.occurredAt <= nextPeriod.now.getTime()).slice(0, 8));
-      setUpcoming(nextTransactions.filter((item) => item.status === "pending" && item.occurredAt > nextPeriod.now.getTime()).slice(-3).reverse());
-      setSummary({ income: nextSummary?.income ?? 0, expense: nextSummary?.expense ?? 0 });
-      setAccounts(nextAccounts);
-      setBudgets(nextBudgets);
-      setGoals(nextGoals);
-      setLoans(nextLoans);
+      const next = await loadHomeSnapshot(db);
+      if (request !== loadSequence.current) return;
+      setPeriod(next.period); setTransactions(next.transactions); setUpcoming(next.upcoming); setSummaries(next.summaries);
+      setAccounts(next.accounts); setBudgets(next.budgets); setGoals(next.goals); setLoans(next.loans);
     } catch {
-      setLoadError(true);
+      if (request === loadSequence.current) setLoadError(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === loadSequence.current) { setLoading(false); setRefreshing(false); }
     }
   }, [db]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
-  const balance = summary.income - summary.expense;
+  useFocusEffect(useCallback(() => { focused.current = true; void load(); return () => { focused.current = false; loadSequence.current += 1; }; }, [load]));
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -84,33 +72,37 @@ export default function HomeScreen() {
             </View>
           </Reveal>
 
+          {loading ? <View accessibilityLiveRegion="polite"><Text style={{ color: colors.textMuted }}>Carregando visão geral…</Text><SkeletonRows count={5} /></View> : loadError ? <EmptyState title="Visão geral indisponível" description="Não foi possível consultar os dados. Nenhum saldo foi confirmado nesta tentativa." actionLabel="Tentar novamente" onAction={() => void load()} /> : <>
           <SectionHeader title="Contas" actionLabel="Gerenciar" onAction={() => router.push("/collection/accounts")} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
             {accounts.map((account) => (
               <Pressable key={account.id} onPress={() => router.push("/collection/accounts")} style={({ pressed }) => [styles.accountCard, { backgroundColor: colors.surface, borderColor: account.isPrimary ? colors.accent : colors.border, transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
                 <View style={styles.accountTop}><View style={[styles.accountDot, { backgroundColor: account.color }]} /><Text style={[styles.accountType, { color: colors.textMuted }]}>{account.isPrimary ? "PRINCIPAL" : account.type.toUpperCase()}</Text></View>
                 <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>{account.name}</Text>
-                <Text style={[styles.accountBalance, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCentsToBRL(account.balanceCents)}</Text>
+                <Text style={[styles.accountBalance, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatCentsByCurrency(account.balanceCents, account.currency)}</Text>
               </Pressable>
             ))}
             <Pressable accessibilityRole="button" accessibilityLabel="Adicionar conta" onPress={() => router.push("/collection/accounts")} style={[styles.accountAdd, { borderColor: colors.border }]}><Plus color={colors.accent} size={22} /></Pressable>
           </ScrollView>
 
           <Reveal delay={45}>
-            <View style={[styles.balanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {summaries.length > 1 && <Text style={[styles.caption, { color: colors.textMuted, marginBottom: 10 }]}>Totais separados por moeda · sem conversão cambial</Text>}
+            {summaries.map((summary) => (
+            <View key={summary.currency} style={[styles.balanceCard, { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 10 }]}>
               <View style={styles.balanceTop}>
                 <Text style={[styles.period, { color: colors.textMuted }]}>{formatMonthLabel(period.now.getTime())}</Text>
                 <Text style={[styles.periodMeta, { color: colors.textMuted }]}>{transactions.length} recentes</Text>
               </View>
-              <Text accessibilityLabel={`Saldo do período ${formatCentsToBRL(balance)}`} style={[styles.balance, { color: colors.text }]}>{formatCentsToBRL(balance)}</Text>
-              <Text style={[styles.caption, { color: colors.textMuted }]}>saldo do período</Text>
+              <Text accessibilityLabel={`Saldo do período ${formatCentsByCurrency(summary.balance, summary.currency)}`} style={[styles.balance, { color: summary.balance < 0 ? colors.negative : colors.text }]}>{formatCentsByCurrency(summary.balance, summary.currency)}</Text>
+              <Text style={[styles.caption, { color: colors.textMuted }]}>saldo do período · {summary.currency}</Text>
 
               <View style={[styles.metrics, { borderTopColor: colors.border }]}>
-                <Metric icon={<ArrowUpRight color={colors.positive} size={17} />} label="Receitas" value={formatCentsToBRL(summary.income)} color={colors.positive} />
+                <Metric icon={<ArrowUpRight color={colors.positive} size={17} />} label="Receitas" value={formatCentsByCurrency(summary.income, summary.currency)} color={colors.positive} />
                 <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
-                <Metric icon={<ArrowDownLeft color={colors.negative} size={17} />} label="Despesas" value={formatCentsToBRL(summary.expense)} color={colors.negative} />
+                <Metric icon={<ArrowDownLeft color={colors.negative} size={17} />} label="Despesas" value={formatCentsByCurrency(summary.expense, summary.currency)} color={colors.negative} />
               </View>
             </View>
+            ))}
           </Reveal>
 
           {budgets.length > 0 && <>
@@ -120,7 +112,7 @@ export default function HomeScreen() {
               return <Pressable key={budget.id} onPress={() => router.push("/budgets")} style={[styles.budgetCard, { backgroundColor: colors.surface }]}>
                 <View style={styles.budgetHead}><Text style={[styles.budgetName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.budgetPercent, { color: budget.color }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
                 <View style={[styles.budgetTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.budgetFill, { width: `${Math.max(ratio * 100, 1)}%`, backgroundColor: budget.color }]} /></View>
-                <Text style={[styles.budgetMeta, { color: colors.textMuted }]}>{formatCentsToBRL(budget.spentCents)} gastos · {formatCentsToBRL(budget.amountCents)} limite</Text>
+                <Text style={[styles.budgetMeta, { color: colors.textMuted }]}>{formatCentsByCurrency(budget.spentCents, budget.currency)} gastos · {formatCentsByCurrency(budget.amountCents, budget.currency)} limite</Text>
               </Pressable>;
             })}
           </>}
@@ -154,14 +146,13 @@ export default function HomeScreen() {
 
           <SectionHeader title="Movimentações recentes" actionLabel="Ver histórico" onAction={() => router.push("/transactions")} />
           <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {loading ? <SkeletonRows count={4} /> : loadError ? (
-              <EmptyState embedded title="Não foi possível carregar" description="Puxe a tela para baixo e tente novamente." />
-            ) : transactions.length === 0 ? (
+            {transactions.length === 0 ? (
               <EmptyState embedded title="Comece pelo primeiro lançamento" description="Registre uma receita ou despesa. Leva poucos segundos." actionLabel="Adicionar lançamento" onAction={() => router.push("/quick-entry")} />
             ) : transactions.map((transaction, index) => (
               <TransactionItem key={transaction.id} transaction={transaction} isLast={index === transactions.length - 1} onPress={() => router.push(`/transaction/${transaction.id}`)} />
             ))}
           </View>
+          </>}
         </Screen>
       </ScrollView>
       <BottomNav />

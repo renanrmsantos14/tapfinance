@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const expenseCategories = [
   ["alimentacao", "Alimentação", "utensils"],
@@ -216,6 +216,14 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
       // Existing loans remain unclassified; never infer their initial movement.
       await db.execAsync("ALTER TABLE loans ADD COLUMN initial_transaction_id TEXT;");
       await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 5, Date.now());
+    });
+  }
+
+  if (version < 6) {
+    await db.withTransactionAsync(async () => {
+      // Existing budgets were expressed in BRL; preserve their limits and transaction history.
+      await db.execAsync("ALTER TABLE budgets ADD COLUMN currency TEXT NOT NULL DEFAULT 'BRL';");
+      await db.runAsync("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", 6, Date.now());
     });
   }
 

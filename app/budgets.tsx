@@ -11,7 +11,7 @@ import type { Budget, BudgetCycle } from "../src/types/finance";
 import { listCategories } from "../src/repositories/categoryRepository";
 import type { Category } from "../src/types/category";
 import { radius, useAppColors } from "../src/theme";
-import { formatCentsToBRL, parseCurrencyToCents } from "../src/utils/currency";
+import { formatCentsByCurrency, parseCurrencyToCents } from "../src/utils/currency";
 import { formatDate, parseDateInput } from "../src/utils/dates";
 
 const cycles: { id: BudgetCycle; label: string }[] = [
@@ -23,6 +23,7 @@ export default function BudgetsScreen() {
   const reduceMotion = useReducedMotion();
   const [budgets, setBudgets] = useState<Budget[]>([]); const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState(""); const [amount, setAmount] = useState(""); const [cycle, setCycle] = useState<BudgetCycle>("monthly");
+  const [currency, setCurrency] = useState("BRL");
   const [categories, setCategories] = useState<Category[]>([]); const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [editing, setEditing] = useState<BudgetConfiguration | null>(null);
   const [categoryLimits, setCategoryLimits] = useState<Record<string, string>>({});
@@ -41,14 +42,14 @@ export default function BudgetsScreen() {
   useFocusEffect(useCallback(() => { void listCategories(db, "expense").then(setCategories).catch(() => Alert.alert("Não foi possível carregar as categorias", "Tente abrir esta tela novamente.")); }, [db]));
 
   function openCreate() {
-    setEditing(null); setName(""); setAmount(""); setCycle("monthly"); setSelectedCategories([]); setCategoryLimits({});
+    setEditing(null); setName(""); setAmount(""); setCurrency("BRL"); setCycle("monthly"); setSelectedCategories([]); setCategoryLimits({});
     setFormError(null); setStartText(formatDate(Date.now())); setEndText(formatDate(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getTime()));
     setModalOpen(true);
   }
 
   function changeCategoryLimit(categoryId: string, value: string) {
     const cents = parseCurrencyToCents(value);
-    const next = !value.replace(/\D/g, "") ? "" : cents === null ? value : formatCentsToBRL(cents);
+    const next = !value.replace(/\D/g, "") ? "" : cents === null ? value : formatCentsByCurrency(cents, currency);
     setCategoryLimits((current) => ({ ...current, [categoryId]: next }));
   }
 
@@ -57,10 +58,10 @@ export default function BudgetsScreen() {
       const config = await getBudgetConfiguration(db, budget.id);
       if (!config) throw new Error("Orçamento não encontrado.");
       setFormError(null);
-      setEditing(config); setName(config.name); setAmount(formatCentsToBRL(config.amountCents)); setCycle(config.cycle);
+      setEditing(config); setName(config.name); setCurrency(config.currency ?? "BRL"); setAmount(formatCentsByCurrency(config.amountCents, config.currency)); setCycle(config.cycle);
       setStartText(formatDate(config.startAt)); setEndText(formatDate((config.endAt ?? config.startAt + 86_400_000) - 1));
       setSelectedCategories(config.categoryLimits.map((item) => item.categoryId));
-      setCategoryLimits(Object.fromEntries(config.categoryLimits.filter((item) => item.limitCents !== null).map((item) => [item.categoryId, formatCentsToBRL(item.limitCents!)])));
+      setCategoryLimits(Object.fromEntries(config.categoryLimits.filter((item) => item.limitCents !== null).map((item) => [item.categoryId, formatCentsByCurrency(item.limitCents!, config.currency)])));
       setModalOpen(true);
     } catch (error) { Alert.alert("Não foi possível editar", error instanceof Error ? error.message : "Tente novamente."); }
   }
@@ -80,8 +81,8 @@ export default function BudgetsScreen() {
     if (limits.some((item) => !!categoryLimits[item.categoryId]?.trim() && (item.limitCents === null || item.limitCents < 1))) { setFormError("Confira o limite de cada categoria selecionada."); return; }
     saveInProgress.current = true; setSaving(true);
     try {
-      if (editing) await updateBudget(db, editing.id, { name, amountCents: cents, color: editing.color, cycle, startAt: cycle === "custom" ? start! : editing.startAt, endAt: cycle === "custom" ? end!.getTime() : null, categoryLimits: limits });
-      else await createBudget(db, { name, amountCents: cents, color: colors.accent, cycle, startAt: start ?? undefined, endAt: end?.getTime() ?? null, categoryLimits: limits });
+      if (editing) await updateBudget(db, editing.id, { name, currency, amountCents: cents, color: editing.color, cycle, startAt: cycle === "custom" ? start! : editing.startAt, endAt: cycle === "custom" ? end!.getTime() : null, categoryLimits: limits });
+      else await createBudget(db, { name, currency, amountCents: cents, color: colors.accent, cycle, startAt: start ?? undefined, endAt: end?.getTime() ?? null, categoryLimits: limits });
       setEditing(null); setName(""); setAmount(""); setCycle("monthly"); setSelectedCategories([]); setCategoryLimits({}); setModalOpen(false); await load();
     } catch (error) { setFormError(error instanceof Error ? error.message : "Não foi possível salvar. Tente novamente."); }
     finally { saveInProgress.current = false; setSaving(false); }
@@ -123,7 +124,7 @@ export default function BudgetsScreen() {
             return <View key={budget.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={`Detalhes do orçamento ${budget.name}`} onPress={() => router.push(`/budget/${budget.id}`)} onLongPress={() => openActions(budget)}>
               <View style={styles.cardTop}><View style={{ flex: 1 }}><Text style={[styles.cardName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.cycle, { color: colors.textMuted }]}>{budget.cycle === "monthly" ? "Este mês" : budget.cycle === "weekly" ? "Esta semana" : "Período personalizado"}</Text></View><Text style={[styles.percent, { color: progressColor }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
               <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${Math.max(1, progress * 100)}%`, backgroundColor: progressColor }]} /></View>
-              <View style={styles.amountRow}><Text style={[styles.amount, { color: colors.text }]}>{formatCentsToBRL(budget.spentCents)} <Text style={[styles.muted, { color: colors.textMuted }]}>de {formatCentsToBRL(budget.amountCents)}</Text></Text><Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima " : "Restam "}{formatCentsToBRL(Math.abs(remaining))}</Text></View>
+              <View style={styles.amountRow}><Text style={[styles.amount, { color: colors.text }]}>{formatCentsByCurrency(budget.spentCents, budget.currency)} <Text style={[styles.muted, { color: colors.textMuted }]}>de {formatCentsByCurrency(budget.amountCents, budget.currency)}</Text></Text><Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima " : "Restam "}{formatCentsByCurrency(Math.abs(remaining), budget.currency)}</Text></View>
             </Pressable><View style={styles.cardActions}><Pressable accessibilityRole="button" accessibilityLabel={`Editar orçamento ${budget.name}`} onPress={() => { void openEdit(budget); }}><Text style={[styles.cardAction, { color: colors.accent }]}>Editar</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Arquivar orçamento ${budget.name}`} onPress={() => confirmArchive(budget)}><Text style={[styles.cardAction, { color: colors.textMuted }]}>Arquivar</Text></Pressable></View></View>;
           })}
           <Pressable accessibilityRole="button" onPress={openCreate} style={[styles.newRow, { borderColor: colors.border }]}><Plus color={colors.accent} size={18} /><Text style={[styles.newText, { color: colors.accent }]}>Adicionar orçamento</Text></Pressable>
@@ -135,8 +136,11 @@ export default function BudgetsScreen() {
           <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text }]}>{editing ? "Editar orçamento" : "Novo orçamento"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar" disabled={saving} onPress={() => setModalOpen(false)} style={styles.close}><X color={colors.textMuted} size={20} /></Pressable></View>
           <Text style={[styles.label, { color: colors.textMuted }]}>NOME</Text>
           <TextInput accessibilityLabel="Nome do orçamento" placeholder="Ex.: Gastos do mês" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} maxLength={50} />
+          <Text style={[styles.label, { color: colors.textMuted }]}>MOEDA</Text>
+          <TextInput accessibilityLabel="Código da moeda do orçamento" accessibilityHint={editing ? "A moeda fica preservada. Crie outro orçamento para usar outra moeda." : "Três letras, como BRL, USD ou EUR. Somente movimentos nessa moeda entram no orçamento."} editable={!editing && !saving} value={currency} onChangeText={(value) => setCurrency(value.toUpperCase())} autoCapitalize="characters" autoCorrect={false} maxLength={3} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+          <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 6 }}>{editing ? "Moeda preservada. Para outra moeda, crie um novo orçamento." : "Use o código da moeda das suas contas. Valores com duas casas decimais; sem conversão cambial."}</Text>
           <Text style={[styles.label, { color: colors.textMuted }]}>LIMITE</Text>
-          <CurrencyInput value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsToBRL(cents))} />
+          <CurrencyInput currency={currency} value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsByCurrency(cents, currency))} />
           <Text style={[styles.label, { color: colors.textMuted }]}>CICLO</Text>
           <View style={styles.cycleRow}>{cycles.map((item) => <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ selected: cycle === item.id }} onPress={() => setCycle(item.id)} style={[styles.cycleOption, { borderColor: cycle === item.id ? colors.accent : colors.border, backgroundColor: cycle === item.id ? colors.accentSoft : colors.background }]}><Text style={[styles.cycleOptionText, { color: cycle === item.id ? colors.accent : colors.textMuted }]}>{item.label}</Text></Pressable>)}</View>
           {cycle === "custom" && <View style={styles.dateRow}>

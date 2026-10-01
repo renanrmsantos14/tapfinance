@@ -13,7 +13,7 @@ test("v3 upgrade backfills original anchors and preserves deleted-instance histo
     await materializeScheduledTransactions(db, initial);
     sqlite.prepare("DELETE FROM transactions WHERE occurred_at = ?").run(initial);
     const before = sqlite.prepare("SELECT * FROM transactions").all();
-    sqlite.exec("ALTER TABLE schedules DROP COLUMN anchor_at; ALTER TABLE loans DROP COLUMN initial_transaction_id; DELETE FROM schema_migrations WHERE version >= 4;");
+    sqlite.exec("ALTER TABLE schedules DROP COLUMN anchor_at; ALTER TABLE loans DROP COLUMN initial_transaction_id; ALTER TABLE budgets DROP COLUMN currency; DELETE FROM schema_migrations WHERE version >= 4;");
     assert.equal((await inspectBackupDatabase(db)).schemaVersion, 3);
     await initializeDatabase(db);
     await initializeDatabase(db);
