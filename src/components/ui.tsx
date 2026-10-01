@@ -1,7 +1,7 @@
 import { Children, useEffect, useState, type ReactNode } from "react";
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowRight, Inbox } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Inbox } from "lucide-react-native";
 import { radius, useAppColors } from "../theme";
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
@@ -52,15 +52,17 @@ export function PrimaryButton({ children, style, onPress, disabled, accessibilit
   );
 }
 
-export function QuietButton({ children, onPress, style, accessibilityLabel }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
+export function QuietButton({ children, onPress, style, accessibilityLabel, disabled = false }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; accessibilityLabel?: string; disabled?: boolean }) {
   const colors = useAppColors();
   const reduceMotion = useReducedMotion();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.quietButton, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }, style]}
+      style={({ pressed }) => [styles.quietButton, { opacity: disabled ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }, style]}
     >
       {children}
     </Pressable>
@@ -70,6 +72,14 @@ export function QuietButton({ children, onPress, style, accessibilityLabel }: { 
 export function Reveal({ children, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
   // Financial data stays visible immediately, without decorative entrance delays.
   return <View style={style}>{children}</View>;
+}
+
+export function FormHeader({ title, subtitle, onBack, disabled = false }: { title: string; subtitle?: string; onBack: () => void; disabled?: boolean }) {
+  const colors = useAppColors();
+  return <View style={styles.formHeader}>
+    <QuietButton accessibilityLabel="Voltar" onPress={onBack} disabled={disabled}><ArrowLeft color={colors.text} size={22} /></QuietButton>
+    <View style={styles.formHeaderCopy}><Text accessibilityRole="header" style={[styles.formHeaderTitle, { color: colors.text }]}>{title}</Text>{subtitle && <Text style={[styles.formHeaderSubtitle, { color: colors.textMuted }]}>{subtitle}</Text>}</View>
+  </View>;
 }
 
 export function SectionHeader({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {
@@ -107,6 +117,10 @@ export function SkeletonRows({ count = 3 }: { count?: number }) {
 export const styles = StyleSheet.create({
   flex: { flex: 1 },
   screen: { flex: 1, paddingHorizontal: 20 },
+  formHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 24 },
+  formHeaderCopy: { flex: 1, minWidth: 0, gap: 4 },
+  formHeaderTitle: { fontSize: 20, fontWeight: "600", letterSpacing: -0.3 },
+  formHeaderSubtitle: { fontSize: 13, lineHeight: 18 },
   label: { fontSize: 12, fontWeight: "600", letterSpacing: 1.1, textTransform: "uppercase" },
   primaryButton: { minHeight: 54, borderRadius: radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, flexDirection: "row", gap: 9 },
   primaryButtonText: { flexShrink: 1, fontSize: 15, fontWeight: "600", textAlign: "center" },

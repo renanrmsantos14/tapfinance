@@ -42,3 +42,21 @@ Verificação final deste lote: TypeScript, 172 testes e exportação Android de
 Ambiente consultado: sem AVD instalado; sem suporte web instalado. Portanto, nenhum clique, teclado, TalkBack ou screenshot nativo foi validado neste lote. As mudanças de layout e composição precisam desse teste; exportação não o substitui.
 
 O escopo integral permanece aberto: revisar `quick-entry`, `transaction/[id]`, `collection/[kind]`, `tracker/[kind]/[id]`, `budget/[id]`, transferência, correção de saldo, calendário, relatórios, atividade e seletor de versões; completar feedback/labels do histórico; padronizar os dois modais restantes com reduzir movimentos; conferir todas as telas com dados reais, nomes/valores longos e escala de fonte, navegação e teclado no Android. Estas pendências atualizam a lista do primeiro lote, não reduzem o objetivo de revisar toda a UI/UX/animação.
+
+## Terceiro lote — formulários e movimento
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Cabeçalhos centrados com espaçadores vazios em quatro fluxos | FormHeader compartilhado, título legível e voltar de 48 dp | Hierarquia consistente sem containers decorativos |
+| Conta e vínculos antes do valor no lançamento rápido | Tipo/valor primeiro; conta/categoria depois; vínculos opcionais abaixo | Priorizar a tarefa de entrada |
+| Painéis grandes em valor/transferência/detalhe especial | Valor direto na página, com foco visível no input | Reduzir decoração mantendo orientação |
+| Conta/categoria/valor editáveis durante gravação | Estado disabled, feedback visual e edição bloqueada nos fluxos alterados | Evitar mudanças aparentes durante uma operação já iniciada |
+| Conta truncada e seletores pequenos | Nomes com quebra e controles com mínimo de 48 dp | Melhorar leitura e alcance por toque |
+| Data/hora sempre lado a lado | Layout permite quebra, campos com altura mínima e padding | Suportar menos espaço disponível |
+| Alguns modais usam fade ao reduzir movimentos | Todos os quatro modais usam none quando true ou desconhecido | Uniformizar a preferência conservadora |
+
+FormHeader reutilizado em novo/editar/duplicar lançamento, detalhes de transferências/correções, transferência e correção de saldo. QuietButton agora aceita disabled. CurrencyInput mantém a digitação por centavos, anuncia o bloqueio, ignora eventos enquanto desabilitado e sai do foco nesse estado; reabilitar não força novo foco. Seletores de situação e vínculo continuam usando os mesmos valores técnicos. O seletor opcional existente substitui código duplicado de vínculo no lançamento rápido, distingue Meta/Empréstimo e só aparece após a consulta das referências.
+
+Alterações pontuais em cadastros, trackers e orçamento neste lote: bloquear CurrencyInput/AccountSelector durante salvar e respeitar reduzir movimentos no modal. Isso não equivale à revisão integral dessas telas. Não foram alterados serviços, regras financeiras, schema ou registros. Confirmações de excluir/transferir/corrigir saldo e regras de referência permanecem.
+
+TypeScript, os 172 testes de regressão e exportação Android de 3.340 módulos passaram; Hermes `entry-985f70907bc92ef023668e6f62c8681d.hbc`. Não foram criados testes estáticos de fonte para simular prova de interação. ADB consultado novamente sem dispositivo; foco, teclado, toque, leitura por TalkBack e aparência continuam sem validação nativa. Ainda faltam acabamento dos cadastros/trackers/detalhe do orçamento, calendário, relatórios, atividade, seletor de versões, feedback completo dos filtros e estados restantes, além da inspeção de todas as telas no Android. Objetivo integral continua aberto; sem novo APK/release.
