@@ -60,3 +60,17 @@ FormHeader reutilizado em novo/editar/duplicar lançamento, detalhes de transfer
 Alterações pontuais em cadastros, trackers e orçamento neste lote: bloquear CurrencyInput/AccountSelector durante salvar e respeitar reduzir movimentos no modal. Isso não equivale à revisão integral dessas telas. Não foram alterados serviços, regras financeiras, schema ou registros. Confirmações de excluir/transferir/corrigir saldo e regras de referência permanecem.
 
 TypeScript, os 172 testes de regressão e exportação Android de 3.340 módulos passaram; Hermes `entry-985f70907bc92ef023668e6f62c8681d.hbc`. Não foram criados testes estáticos de fonte para simular prova de interação. ADB consultado novamente sem dispositivo; foco, teclado, toque, leitura por TalkBack e aparência continuam sem validação nativa. Ainda faltam acabamento dos cadastros/trackers/detalhe do orçamento, calendário, relatórios, atividade, seletor de versões, feedback completo dos filtros e estados restantes, além da inspeção de todas as telas no Android. Objetivo integral continua aberto; sem novo APK/release.
+
+## Quarto lote — detalhe do orçamento
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Voltar pequeno e título de 30 sp/800 | FormHeader compartilhado em conteúdo, erro e carregamento | Consistência com os formulários, com voltar de 48 dp |
+| Setas de período de 36 dp sem feedback | QuietButton de 48 dp, estado disabled e feedback respeitando reduzir movimentos | Melhorar alcance e orientação |
+| Painel com borda, gráfico pesado e texto central sobreposto | Resumo direto, anel mais fino e percentual fora do SVG | Reduzir decoração e permitir quebra do texto ampliado |
+| Categoria truncada e valor disputando largura | Nome completo, metadados e valor na mesma coluna | Mais espaço para nomes e valores longos |
+| Lista dentro de outra borda | Linhas separadas por divisores simples | Hierarquia mais leve |
+
+Distribuição por categoria, contagem, limites individuais, saldo restante, alerta de excesso, valor diário e navegação pelos mesmos períodos foram preservados. SVG não recebe foco próprio; os valores continuam em texto. Não houve mudança de consultas, schema, dados financeiros, versão ou release.
+
+TypeScript, os 172 testes e a exportação Android de 3.340 módulos passaram; Hermes `entry-dca2e44ca41a86f64befa00f35bba21f.hbc`. Diff sem erro de whitespace. ADB novamente sem dispositivos; leitura ampliada, TalkBack, toque e aparência ainda exigem validação nativa. A revisão integral continua aberta: cadastros, trackers, calendário, relatórios, atividade, seletor de versões, feedback dos filtros/estados e inspeção de todas as telas no Android.
