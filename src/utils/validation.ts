@@ -1,4 +1,5 @@
 import type { TransactionDraft } from "../types/transaction";
+import { normalizeTransactionTags } from "./transactionTags";
 
 export function validateTransactionDraft(draft: TransactionDraft): string | null {
   if (!Number.isSafeInteger(draft.amountCents) || draft.amountCents <= 0) {
@@ -9,5 +10,6 @@ export function validateTransactionDraft(draft: TransactionDraft): string | null
   if (draft.type !== "income" && draft.type !== "expense") return "Escolha receita ou despesa.";
   if (draft.status !== undefined && draft.status !== "paid" && draft.status !== "pending") return "Escolha uma situação válida.";
   if (draft.kind !== undefined && !["standard", "transfer", "correction"].includes(draft.kind)) return "Tipo de lançamento inválido.";
+  if (draft.tags !== undefined) { try { normalizeTransactionTags(draft.tags); } catch (error) { return error instanceof Error ? error.message : "Tags inválidas."; } }
   return null;
 }

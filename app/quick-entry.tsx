@@ -8,6 +8,8 @@ import { CategorySelector } from "../src/components/CategorySelector";
 import { AccountSelector } from "../src/components/AccountSelector";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { TransactionFormReferenceStatus } from "../src/components/TransactionFormReferenceStatus";
+import { TransactionMetadataFields } from "../src/components/TransactionMetadataFields";
+import { normalizeTransactionTags } from "../src/utils/transactionTags";
 import { Label, PrimaryButton, QuietButton, Reveal, Screen } from "../src/components/ui";
 import { createTransaction, suggestCategoryFromHistory } from "../src/repositories/transactionRepository";
 import type { TransactionType } from "../src/types/category";
@@ -28,6 +30,9 @@ export default function QuickEntryScreen() {
   const [linkedId, setLinkedId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [metadataOpen, setMetadataOpen] = useState(false);
+  const [title, setTitle] = useState(""); const titleEdited = useRef(false);
+  const [notes, setNotes] = useState(""); const [tags, setTags] = useState<string[]>([]); const [tagInput, setTagInput] = useState("");
   const [occurredAt, setOccurredAt] = useState(Date.now());
   const [suggestionId, setSuggestionId] = useState<string | null>(null);
   const [categorySuggested, setCategorySuggested] = useState(false);
@@ -100,7 +105,10 @@ export default function QuickEntryScreen() {
     if (savingRef.current || !canSave) return;
     const linkedGoal = linkedId?.startsWith("goal:") ? linkedId.slice(5) : null;
     const linkedLoan = linkedId?.startsWith("loan:") ? linkedId.slice(5) : null;
-    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId: linkedGoal, loanId: linkedLoan, description, title: description, occurredAt: suggestionId ? occurredAt : Date.now() };
+    let nextTags: string[];
+    try { nextTags = normalizeTransactionTags([...tags, ...(tagInput.trim() ? [tagInput] : [])]); }
+    catch (reason) { Alert.alert("Confira as tags", reason instanceof Error ? reason.message : "Tags inválidas."); return; }
+    const draft = { type, amountCents, categoryId: categoryId ?? "", accountId: accountId ?? undefined, goalId: linkedGoal, loanId: linkedLoan, description, title: titleEdited.current ? title || null : undefined, notes, tags: nextTags, occurredAt: suggestionId ? occurredAt : Date.now() };
     const error = validateTransactionDraft(draft);
     if (error) {
       Alert.alert("Confira o lançamento", error);
@@ -206,6 +214,8 @@ export default function QuickEntryScreen() {
             </View>
           </View>
 
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: metadataOpen, disabled: saving }} disabled={saving} onPress={() => setMetadataOpen((value) => !value)} style={({ pressed }) => ({ minHeight: 44, marginTop: 18, justifyContent: "center", opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.accent }}>{metadataOpen ? "Ocultar detalhes e tags" : "Adicionar título, notas e tags"}</Text></Pressable>
+          {metadataOpen && <TransactionMetadataFields title={title} notes={notes} tags={tags} tagInput={tagInput} disabled={saving} onTitleChange={(value) => { titleEdited.current = true; setTitle(value); }} onNotesChange={setNotes} onTagsChange={setTags} onTagInputChange={setTagInput} />}
           <PrimaryButton disabled={saving || !canSave} accessibilityLabel="Salvar lançamento" onPress={() => void save()} style={styles.save}>
             {saving ? <ActivityIndicator color={colors.background} /> : <Check color={colors.background} size={19} />}
             {saving ? "Salvando…" : "Salvar lançamento"}

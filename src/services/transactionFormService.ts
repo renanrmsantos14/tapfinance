@@ -3,9 +3,21 @@ import { getCategory, listCategories } from "../repositories/categoryRepository"
 import { listAccounts, listGoals, listLoans } from "../repositories/financeRepository";
 import type { Category, TransactionType } from "../types/category";
 import type { Account, Goal, Loan } from "../types/finance";
+import type { Transaction, TransactionDraft } from "../types/transaction";
 
 export type TransactionFormReferences = { categories: Category[]; accounts: Account[]; goals: Goal[]; loans: Loan[] };
 export type HistoricalTransactionReferences = { categoryId: string; accountId: string };
+
+export function buildTransactionCopyDraft(source: Transaction, occurredAt = Date.now()): TransactionDraft {
+  if (source.kind !== "standard") throw new Error("Use o fluxo específico de transferência ou correção; esta cópia é somente para lançamentos comuns.");
+  if (!Number.isSafeInteger(occurredAt) || !Number.isFinite(new Date(occurredAt).getTime())) throw new Error("Escolha uma data válida para a cópia.");
+  return {
+    type: source.type, amountCents: source.amountCents, categoryId: source.categoryId, accountId: source.accountId,
+    description: source.description ?? "", title: source.title, notes: source.notes, tags: [...source.tags],
+    status: source.status, kind: "standard", occurredAt,
+    goalId: source.goalId, loanId: source.initialLoanId ? null : source.loanId, scheduleId: null,
+  };
+}
 
 export async function loadTransactionFormReferences(db: SQLiteDatabase, type: TransactionType, historical?: HistoricalTransactionReferences): Promise<TransactionFormReferences> {
   const [categories, accounts, goals, loans, originalCategory] = await Promise.all([

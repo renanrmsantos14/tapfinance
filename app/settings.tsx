@@ -94,8 +94,8 @@ export default function SettingsScreen() {
     try {
       const ok = await exportTransactions(db);
       if (!ok) Alert.alert("Compartilhamento indisponível", "Não foi possível abrir o compartilhamento neste aparelho.");
-    } catch {
-      Alert.alert("Não foi possível exportar", "Tente novamente.");
+    } catch (error) {
+      Alert.alert("Não foi possível exportar", error instanceof Error ? error.message : "Tente novamente.");
     }
   }
 
@@ -138,7 +138,7 @@ export default function SettingsScreen() {
       if (picked.canceled || !picked.assets[0]) return;
       const preview = await inspectCsvFile(picked.assets[0].uri);
       if (!preview.rows.length) { Alert.alert("CSV vazio", "Nenhum lançamento foi encontrado."); return; }
-      Alert.alert("Importar lançamentos?", `${preview.rows.length} lançamentos encontrados. Contas e categorias ausentes serão criadas. Linhas já importadas serão ignoradas.`, [
+      Alert.alert("Importar lançamentos?", `${preview.rows.length} lançamentos encontrados. Contas e categorias ausentes serão criadas. Linhas já importadas serão ignoradas. Título, notas, tags e horário são preservados quando presentes. CSV não restaura saldo inicial, moeda, hierarquia, vínculos com metas/empréstimos ou regras de recorrência; use o backup completo para esses dados.`, [
         { text: "Cancelar", style: "cancel" },
         { text: "Importar", onPress: () => { void (async () => {
           setDataBusy(true);

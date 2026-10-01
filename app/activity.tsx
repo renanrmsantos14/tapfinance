@@ -15,7 +15,7 @@ export default function ActivityScreen() {
   const [loading, setLoading] = useState(true); const [loadError, setLoadError] = useState(false);
   const load = useCallback(async () => {
     setLoading(true); setLoadError(false);
-    try { setItems(await db.getAllAsync<Activity>(`SELECT a.id, a.entity_id, a.action, a.occurred_at, COALESCE(t.title, l.name) AS title, t.amount_cents FROM activity_log a LEFT JOIN transactions t ON a.entity_type = 'transaction' AND t.id = a.entity_id LEFT JOIN loans l ON a.entity_type = 'loan' AND l.id = a.entity_id ORDER BY a.occurred_at DESC, a.id DESC LIMIT 100`)); }
+    try { setItems(await db.getAllAsync<Activity>(`SELECT a.id, a.entity_id, a.action, a.occurred_at, COALESCE(t.title, l.name, c.name) AS title, t.amount_cents FROM activity_log a LEFT JOIN transactions t ON a.entity_type = 'transaction' AND t.id = a.entity_id LEFT JOIN loans l ON a.entity_type = 'loan' AND l.id = a.entity_id LEFT JOIN accounts c ON a.entity_type = 'account' AND c.id = a.entity_id ORDER BY a.occurred_at DESC, a.id DESC LIMIT 100`)); }
     catch { setLoadError(true); }
     finally { setLoading(false); }
   }, [db]);

@@ -15,6 +15,8 @@ export async function listAccounts(db: SQLiteDatabase, includeArchived = false):
         WHEN t.status != 'paid' THEN 0
         WHEN t.kind = 'transfer' AND t.type = 'income' THEN t.amount_cents
         WHEN t.kind = 'transfer' AND t.type = 'expense' THEN -t.amount_cents
+        WHEN t.kind = 'correction' AND t.type = 'income' THEN t.amount_cents
+        WHEN t.kind = 'correction' AND t.type = 'expense' THEN -t.amount_cents
         WHEN t.kind = 'standard' AND t.type = 'income' THEN t.amount_cents
         WHEN t.kind = 'standard' AND t.type = 'expense' THEN -t.amount_cents
         ELSE 0 END), 0) AS balance_cents
@@ -66,6 +68,37 @@ export async function archiveAccount(db: SQLiteDatabase, id: string): Promise<vo
   if (!result.changes) throw new Error("A conta principal não pode ser arquivada.");
 }
 
+export async function restoreAccount(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const account = await tx.getFirstAsync<{ is_archived: number }>("SELECT is_archived FROM accounts WHERE id = ?", id);
+    if (!account) throw new Error("Conta não encontrada.");
+    if (account.is_archived === 0) return;
+    await tx.runAsync("UPDATE accounts SET is_archived = 0, is_primary = 0, updated_at = ? WHERE id = ?", Date.now(), id);
+  });
+}
+
+export async function correctAccountBalance(db: SQLiteDatabase, input: { accountId: string; balanceCents: number; expectedBalanceCents: number; notes?: string }): Promise<string | null> {
+  if (!Number.isSafeInteger(input.balanceCents) || !Number.isSafeInteger(input.expectedBalanceCents)) throw new Error("Informe um saldo válido em centavos inteiros.");
+  let id: string | null = null;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const account = (await listAccounts(tx)).find((item) => item.id === input.accountId);
+    if (!account) throw new Error("Conta não encontrada ou arquivada.");
+    if (!Number.isSafeInteger(account.balanceCents)) throw new Error("O saldo atual está fora do limite seguro. Revise as movimentações da conta.");
+    if (account.balanceCents === input.balanceCents) return;
+    if (account.balanceCents !== input.expectedBalanceCents) throw new Error("O saldo mudou após a consulta. Atualize o saldo atual e confirme novamente; o valor informado foi preservado.");
+    const delta = input.balanceCents - account.balanceCents;
+    if (!Number.isSafeInteger(delta)) throw new Error("A diferença entre os saldos está fora do limite seguro.");
+    const type = delta > 0 ? "income" : "expense";
+    const categoryId = type === "income" ? "outros-receita" : "outros-despesa";
+    const category = await tx.getFirstAsync<{ type: string }>("SELECT type FROM categories WHERE id = ?", categoryId);
+    if (category?.type !== type) throw new Error("Categoria de sistema indisponível para registrar a correção.");
+    id = createId(); const now = Date.now();
+    await tx.runAsync("INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, account_id, title, notes, status, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'correction')", id, type, Math.abs(delta), categoryId, "Ajuste administrativo; não representa receita ou despesa.", now, now, now, account.id, "Correção de saldo", input.notes?.trim() || null);
+    await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('account', ?, ?, ?)", account.id, `account_balance_adjusted:${account.balanceCents}:${input.balanceCents}`, now);
+  });
+  return id;
+}
+
 export async function setPrimaryAccount(db: SQLiteDatabase, accountId: string): Promise<void> {
   await db.withTransactionAsync(async () => {
     const account = await db.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", accountId);
@@ -77,7 +110,8 @@ export async function setPrimaryAccount(db: SQLiteDatabase, accountId: string): 
 
 export async function createTransfer(db: SQLiteDatabase, input: { fromAccountId: string; toAccountId: string; amountCents: number; occurredAt: number; title?: string }): Promise<string> {
   if (input.fromAccountId === input.toAccountId) throw new Error("Escolha contas diferentes.");
-  if (input.amountCents <= 0) throw new Error("Informe um valor maior que zero.");
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe um valor válido maior que zero, em centavos inteiros.");
+  if (!Number.isSafeInteger(input.occurredAt) || !Number.isFinite(new Date(input.occurredAt).getTime())) throw new Error("Informe uma data válida para a transferência.");
   const groupId = createId(); const now = Date.now(); const title = input.title?.trim() || "Transferência";
   await db.withExclusiveTransactionAsync(async (tx) => {
     const accounts = await tx.getAllAsync<{ id: string; currency: string }>(
