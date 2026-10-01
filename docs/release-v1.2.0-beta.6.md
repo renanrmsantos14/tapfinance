@@ -25,4 +25,6 @@ Pré-release Android, versionCode 20. SQLite passa do esquema 5 para o 6.
 ## Verificação
 
 - 166 testes passaram, sem falhas; TypeScript aprovado. Exportação Android aprovada com 3.337 módulos e bundle Hermes.
+- APK compilado com sucesso em 7m25s; pacote `com.tapfinance.app`, versão `1.2.0-beta.6`, versionCode 20 e quatro ABIs: arm64-v8a, armeabi-v7a, x86 e x86_64. Assinatura v2 válida, com a mesma chave debug das betas anteriores.
+- Instalador `app-release.apk`: 112.975.725 bytes; SHA-256 `d697fc32cf7a495e53a4b9a409bf9f64184f2ae1f5b13eec21e9f700e3a869bb`.
 - Compilação local utiliza SDK Android existente e o caminho curto `T:\tapfinance\android`, com `T:` mapeado à pasta `C:\Users\mendo\Desktop\Projetos`. Mapear diretamente a raiz do app impede o autolinking de localizar seu `package.json`.
