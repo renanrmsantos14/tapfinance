@@ -74,3 +74,18 @@ TypeScript, os 172 testes de regressão e exportação Android de 3.340 módulos
 Distribuição por categoria, contagem, limites individuais, saldo restante, alerta de excesso, valor diário e navegação pelos mesmos períodos foram preservados. SVG não recebe foco próprio; os valores continuam em texto. Não houve mudança de consultas, schema, dados financeiros, versão ou release.
 
 TypeScript, os 172 testes e a exportação Android de 3.340 módulos passaram; Hermes `entry-dca2e44ca41a86f64befa00f35bba21f.hbc`. Diff sem erro de whitespace. ADB novamente sem dispositivos; leitura ampliada, TalkBack, toque e aparência ainda exigem validação nativa. A revisão integral continua aberta: cadastros, trackers, calendário, relatórios, atividade, seletor de versões, feedback dos filtros/estados e inspeção de todas as telas no Android.
+
+## Quinto lote — metas e empréstimos
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Voltar pequeno, nome pesado e tipo em caixa alta | FormHeader com nome e tipo legível | Hierarquia consistente e toque de 48 dp |
+| Ações pequenas sem feedback visual | QuietButton com disabled anunciado e feedback respeitando reduzir movimentos | Uniformizar interação |
+| Resumo e histórico com bordas externas | Conteúdo direto e barra de progresso de 5 dp | Reduzir decoração |
+| Percentual e saldo restantes em linha rígida | Rodapé com quebra e espaçamento | Dar espaço ao texto ampliado |
+| Nome e prazo editáveis durante salvar | Inputs bloqueados, com estado anunciado e visual | Evitar alterações aparentes durante a gravação |
+| Candidato a desembolso mistura nome e valor | Nome, valor e identificação em linhas próprias | Facilitar conferência sem esconder o ID |
+
+Mantidos cálculos, prazos, direção do empréstimo, histórico, aviso de legado/desembolso excluído, filtro de candidatos pagos e confirmação explícita de vínculo. Arquivamento/restauração e compensação continuam com as mesmas regras. O botão de novo lançamento também fica bloqueado enquanto salva; o ícone usa accentContrast nos dois temas. Nenhuma alteração em persistência, schema, versão ou release. O modal já respeitava reduzir movimentos e continua assim.
+
+TypeScript, os 172 testes e a exportação Android final de 3.340 módulos passaram; Hermes `entry-6aea5c11b228441f27fca5bf22348f32.hbc`. Diff sem erro de whitespace. ADB consultado sem dispositivo conectado; aparência, escala de fonte, TalkBack, teclado e toque ainda não comprovados. A revisão integral permanece aberta: cadastros, calendário, relatórios, atividade, seletor de versões, feedback dos filtros/estados e inspeção de todas as telas no Android.
