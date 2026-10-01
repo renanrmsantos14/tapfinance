@@ -7,8 +7,8 @@ import { BottomNav } from "../../src/components/BottomNav";
 import { AccountSelector } from "../../src/components/AccountSelector";
 import { CurrencyInput } from "../../src/components/CurrencyInput";
 import { EmptyState, PrimaryButton, Screen, useReducedMotion } from "../../src/components/ui";
-import { archiveAccount, createAccount, createGoal, createLoan, createSchedule, deleteSchedule, listAccounts, listGoals, listLoans, listSchedules, moveAccount, setPrimaryAccount, setScheduleActive, setTrackerArchived, updateAccount, updateSchedule } from "../../src/repositories/financeRepository";
-import { archiveCategory, createCategory, listCategories, moveCategory, updateCategory } from "../../src/repositories/categoryRepository";
+import { archiveAccount, createAccount, createGoal, createLoan, createSchedule, deleteSchedule, listAccounts, listGoals, listLoans, listSchedules, moveAccount, restoreAccount, setPrimaryAccount, setScheduleActive, setTrackerArchived, updateAccount, updateSchedule } from "../../src/repositories/financeRepository";
+import { archiveCategory, createCategory, listCategories, moveCategory, restoreCategory, updateCategory } from "../../src/repositories/categoryRepository";
 import type { Account, Goal, Loan, Schedule } from "../../src/types/finance";
 import type { Category } from "../../src/types/category";
 import { radius, useAppColors } from "../../src/theme";
@@ -44,21 +44,25 @@ export default function CollectionScreen() {
   const saveInProgress = useRef(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [scheduleActions, setScheduleActions] = useState<Schedule | null>(null);
+  const [accountActions, setAccountActions] = useState<Account | null>(null);
   const [updateFuturePending, setUpdateFuturePending] = useState(false);
   const [changingSchedule, setChangingSchedule] = useState(false);
   const scheduleChangeInProgress = useRef(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [changingCatalog, setChangingCatalog] = useState(false);
+  const catalogChangeInProgress = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-    if (kind === "accounts") setItems(await listAccounts(db));
+    if (kind === "accounts") setItems(await listAccounts(db, true));
     else if (kind === "goals") setItems(await listGoals(db, true));
     else if (kind === "loans") setItems(await listLoans(db, true));
     else if (kind === "schedules") setItems(await listSchedules(db, true));
     else {
-      const [expenses, incomes] = await Promise.all([listCategories(db, "expense"), listCategories(db, "income")]);
+      const [expenses, incomes] = await Promise.all([listCategories(db, "expense", true), listCategories(db, "income", true)]);
       setItems([...expenses, ...incomes]);
     }
     const [expenses, incomes] = await Promise.all([listCategories(db, "expense"), listCategories(db, "income")]);
@@ -75,10 +79,22 @@ export default function CollectionScreen() {
   const categoryColors = [colors.accent, colors.positive, colors.negative, colors.warning, "#B9A0E8", "#69C5C8"];
   const categoryIcons = ["tag", "utensils", "car", "house", "shopping-bag", "briefcase-business", "heart-pulse", "ellipsis"];
   const categoryIconLabels: Record<string, string> = { tag: "Etiqueta", utensils: "Comida", car: "Carro", house: "Casa", "shopping-bag": "Compras", "briefcase-business": "Trabalho", "heart-pulse": "Saúde", ellipsis: "Outros" };
-  const displayedItems = kind === "categories" ? (items as Category[]).flatMap((item, _, all) =>
-    item.parentId && all.some((parent) => parent.id === item.parentId) ? [] : [item, ...all.filter((child) => child.parentId === item.id)]) : items;
+  const hasArchiveFilter = kind === "accounts" || kind === "categories";
+  const isArchived = (item: Entry) => kind === "categories" ? !(item as Category).isActive : (item as Account).isArchived;
+  const filteredItems = hasArchiveFilter ? items.filter((item) => isArchived(item) === showArchived) : items;
+  const displayedItems = kind === "categories" ? (filteredItems as Category[]).flatMap((item, _, all) =>
+    item.parentId && all.some((parent) => parent.id === item.parentId) ? [] : [item, ...all.filter((child) => child.parentId === item.id)]) : filteredItems;
+
+  async function runCatalogAction(action: () => Promise<void>) {
+    if (catalogChangeInProgress.current) return;
+    catalogChangeInProgress.current = true; setChangingCatalog(true);
+    try { await action(); await load(); }
+    catch (error) { Alert.alert("Não foi possível atualizar o cadastro", error instanceof Error ? error.message : "Tente novamente."); }
+    finally { catalogChangeInProgress.current = false; setChangingCatalog(false); }
+  }
 
   function openCreate() {
+    if (catalogChangeInProgress.current || saveInProgress.current) return;
     setEditingSchedule(null); setUpdateFuturePending(false);
     setEditingCategory(null); setEditingAccount(null); setName(""); setAmount(""); setType("expense"); setParentId(null);
     setCategoryId(categories.find((category) => category.id === "outros-despesa")?.id ?? categories.find((category) => category.type === "expense")?.id ?? "");
@@ -173,6 +189,7 @@ export default function CollectionScreen() {
   }
 
   async function archive(item: Entry) {
+    if (catalogChangeInProgress.current) return;
     if (kind === "schedules") { confirmScheduleState(item as Schedule); return; }
     if (kind === "goals" || kind === "loans") {
       const tracker = item as Goal | Loan;
@@ -183,57 +200,55 @@ export default function CollectionScreen() {
       return;
     }
     if (kind === "accounts" && (item as Account).isPrimary) { Alert.alert("Conta principal", "Escolha outra conta como principal antes de arquivar."); return; }
-    Alert.alert("Arquivar item?", "Ele deixa de aparecer nas listas, mas os lançamentos existentes continuam preservados.", [
+    const restoring = isArchived(item);
+    Alert.alert(restoring ? "Restaurar cadastro?" : "Arquivar cadastro?", `${"title" in item ? item.title : item.name}: ${restoring ? "voltará às listas ativas" : "ficará disponível na lista de arquivados"}. Lançamentos e saldos serão preservados.${kind === "categories" && !restoring ? " Subcategorias serão separadas; restaurar não recria os vínculos removidos." : ""}`, [
       { text: "Cancelar", style: "cancel" },
-      { text: "Arquivar", onPress: () => { void (async () => {
-        const id = item.id;
-        const table = kind === "accounts" ? "accounts" : "categories";
-        const flag = kind === "categories" ? "is_active" : "is_archived";
-        const value = kind === "categories" ? 0 : 1;
-        if (kind === "categories") await archiveCategory(db, id);
-        else if (kind === "accounts") await archiveAccount(db, id);
-        else await db.runAsync(`UPDATE ${table} SET ${flag} = ? WHERE id = ?`, value, id);
-        await load();
-      })().catch((error: unknown) => Alert.alert("Não foi possível arquivar", error instanceof Error ? error.message : "Tente novamente.")); } },
+      { text: restoring ? "Restaurar" : "Arquivar", onPress: () => { void runCatalogAction(() => kind === "categories" ? restoring ? restoreCategory(db, item.id) : archiveCategory(db, item.id) : restoring ? restoreAccount(db, item.id) : archiveAccount(db, item.id)); } },
     ]);
   }
 
   function openActions(item: Entry) {
+    if (changingCatalog) return;
     if (kind === "schedules") { if (!changingSchedule) setScheduleActions(item as Schedule); return; }
     if (kind !== "accounts") { archive(item); return; }
     const account = item as Account;
-    Alert.alert(account.name, account.isPrimary ? "Esta é sua conta principal." : "Escolha uma ação para esta conta.", [
-      { text: "Cancelar", style: "cancel" },
-      ...(!account.isPrimary ? [{ text: "Tornar principal", onPress: () => { void setPrimaryAccount(db, account.id).then(load).catch((error: unknown) => Alert.alert("Não foi possível atualizar", error instanceof Error ? error.message : "Tente novamente.")); } }] : []),
-      { text: "Arquivar", style: "destructive", onPress: () => archive(account) },
-    ]);
+    if (account.isArchived) { void archive(account); return; }
+    setAccountActions(account);
   }
 
   function detail(item: Entry) {
-    if (kind === "accounts") { const value = item as Account; return `${formatCentsToBRL(value.balanceCents)} · ${value.currency}${value.isPrimary ? " · Principal" : ""}`; }
+    if (kind === "accounts") { const value = item as Account; return `${formatCentsToBRL(value.balanceCents)} · ${value.currency}${value.isPrimary ? " · Principal" : ""}${value.isArchived ? " · Arquivada" : ""}`; }
     if (kind === "goals") { const value = item as Goal; return `${formatCentsToBRL(value.progressCents)} de ${formatCentsToBRL(value.targetCents)}${value.isArchived ? " · Arquivada" : ""}`; }
     if (kind === "loans") { const value = item as Loan; return `${value.direction === "lent" ? "A receber" : "A pagar"} · ${formatCentsToBRL(value.remainingCents)} restantes${value.isArchived ? " · Arquivado" : ""}`; }
     if (kind === "schedules") { const value = item as Schedule; return `${formatCentsToBRL(value.amountCents)} · ${typeLabels[value.frequency]}${value.isSubscription ? " · Assinatura" : ""}\n${value.isActive ? `Novas a partir de ${formatDate(value.nextAt)}` : "Inativa · lançamentos preservados"}`; }
     const category = item as Category;
     const parent = categories.find((candidate) => candidate.id === category.parentId);
-    return `${category.type === "income" ? "Receita" : "Despesa"}${parent ? ` · ${parent.name}` : ""}`;
+    return `${category.type === "income" ? "Receita" : "Despesa"}${parent ? ` · ${parent.name}` : ""}${!category.isActive ? " · Arquivada" : ""}`;
   }
 
   return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
     <View style={styles.header}><View><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={[styles.back, { color: colors.accent }]}>‹ Mais</Text></Pressable><Text style={[styles.title, { color: colors.text }]}>{title}</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>{items.length} {items.length === 1 ? "item" : "itens"}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Adicionar ${title}`} onPress={openCreate} style={[styles.add, { backgroundColor: colors.surfaceStrong }]}><Plus color={colors.text} size={21} /></Pressable></View>
     {changingSchedule && <Text accessibilityLiveRegion="polite" style={{ color: colors.textMuted, marginBottom: 12 }}>Atualizando recorrência…</Text>}
-    <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>{loading ? <Text style={{ color: colors.textMuted, paddingVertical: 24 }}>Carregando…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : displayedItems.length === 0 ? <View style={styles.empty}><Text style={[styles.emptyTitle, { color: colors.text }]}>Nenhum item cadastrado</Text><Text style={[styles.emptyText, { color: colors.textMuted }]}>Adicione seu primeiro item para começar a acompanhar.</Text></View> : displayedItems.map((item, index) => <View key={item.id} style={[styles.row, { borderBottomColor: colors.border }, index === displayedItems.length - 1 && { borderBottomWidth: 0 }]}>
-      <Pressable accessibilityRole="button" disabled={changingSchedule} onPress={kind === "categories" ? () => openCategoryEdit(item as Category) : kind === "accounts" ? () => openAccountEdit(item as Account) : kind === "schedules" ? () => openScheduleEdit(item as Schedule) : kind === "goals" || kind === "loans" ? () => router.push(`/tracker/${kind}/${item.id}`) : () => openActions(item)} onLongPress={() => archive(item)} style={({ pressed }) => [styles.rowMain, { opacity: changingSchedule ? 0.5 : pressed ? 0.7 : 1 }]}>
+    {hasArchiveFilter && <View style={[styles.choices, { marginBottom: 16 }]}>{([false, true] as const).map((archived) => <Pressable key={String(archived)} accessibilityRole="radio" accessibilityState={{ selected: showArchived === archived, disabled: changingCatalog }} disabled={changingCatalog} onPress={() => setShowArchived(archived)} style={({ pressed }) => [styles.choice, { minHeight: 44, borderColor: showArchived === archived ? colors.accent : colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={{ color: showArchived === archived ? colors.accent : colors.textMuted }}>{archived ? "Arquivados" : "Ativos"} · {items.filter((item) => isArchived(item) === archived).length}</Text></Pressable>)}</View>}
+    {changingCatalog && <Text accessibilityLiveRegion="polite" style={{ color: colors.textMuted, marginBottom: 12 }}>Atualizando cadastro…</Text>}
+    <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>{loading ? <Text style={{ color: colors.textMuted, paddingVertical: 24 }}>Carregando…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : displayedItems.length === 0 ? <View style={styles.empty}><Text style={[styles.emptyTitle, { color: colors.text }]}>{hasArchiveFilter && showArchived ? "Nenhum cadastro arquivado" : "Nenhum item ativo"}</Text><Text style={[styles.emptyText, { color: colors.textMuted }]}>{hasArchiveFilter && showArchived ? "Cadastros arquivados aparecerão aqui para recuperação." : "Adicione um item ou restaure um cadastro arquivado."}</Text></View> : displayedItems.map((item, index) => <View key={item.id} style={[styles.row, { borderBottomColor: colors.border }, index === displayedItems.length - 1 && { borderBottomWidth: 0 }]}>
+      <Pressable accessibilityRole="button" disabled={changingSchedule || changingCatalog} accessibilityState={{ disabled: changingSchedule || changingCatalog }} onPress={hasArchiveFilter && isArchived(item) ? () => { void archive(item); } : kind === "categories" ? () => openCategoryEdit(item as Category) : kind === "accounts" ? () => openAccountEdit(item as Account) : kind === "schedules" ? () => openScheduleEdit(item as Schedule) : kind === "goals" || kind === "loans" ? () => router.push(`/tracker/${kind}/${item.id}`) : () => openActions(item)} onLongPress={() => { void archive(item); }} style={({ pressed }) => [styles.rowMain, { opacity: changingSchedule || changingCatalog ? 0.5 : pressed ? 0.7 : 1 }]}>
         <View style={[styles.dot, { backgroundColor: "color" in item ? item.color : colors.accent }, kind === "categories" && (item as Category).parentId ? styles.childDot : null]} />
         <View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.text }]}>{"title" in item ? item.title : item.name}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{detail(item)}</Text></View>
       </Pressable>
-      {kind === "categories" && <><Pressable accessibilityRole="button" accessibilityLabel={`Mover ${(item as Category).name} para cima`} onPress={() => { void moveCategory(db, item.id, -1).then(load); }} style={styles.move}><ChevronUp color={colors.textMuted} size={18} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Mover ${(item as Category).name} para baixo`} onPress={() => { void moveCategory(db, item.id, 1).then(load); }} style={styles.move}><ChevronDown color={colors.textMuted} size={18} /></Pressable></>}
-      {kind === "accounts" && !(item as Account).isPrimary && <><Pressable accessibilityRole="button" accessibilityLabel={`Mover ${(item as Account).name} para cima`} onPress={() => { void moveAccount(db, item.id, -1).then(load); }} style={styles.move}><ChevronUp color={colors.textMuted} size={18} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Mover ${(item as Account).name} para baixo`} onPress={() => { void moveAccount(db, item.id, 1).then(load); }} style={styles.move}><ChevronDown color={colors.textMuted} size={18} /></Pressable></>}
-      <Pressable accessibilityRole="button" disabled={changingSchedule} accessibilityLabel={`Opções de ${"title" in item ? item.title : item.name}`} onPress={() => openActions(item)} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><Text style={[styles.more, { color: colors.textMuted }]}>•••</Text></Pressable>
+      {kind === "categories" && (item as Category).isActive && <><Pressable accessibilityRole="button" disabled={changingCatalog} accessibilityLabel={`Mover ${(item as Category).name} para cima`} onPress={() => { void runCatalogAction(() => moveCategory(db, item.id, -1)); }} style={styles.move}><ChevronUp color={colors.textMuted} size={18} /></Pressable><Pressable accessibilityRole="button" disabled={changingCatalog} accessibilityLabel={`Mover ${(item as Category).name} para baixo`} onPress={() => { void runCatalogAction(() => moveCategory(db, item.id, 1)); }} style={styles.move}><ChevronDown color={colors.textMuted} size={18} /></Pressable></>}
+      {kind === "accounts" && !(item as Account).isPrimary && !(item as Account).isArchived && <><Pressable accessibilityRole="button" disabled={changingCatalog} accessibilityLabel={`Mover ${(item as Account).name} para cima`} onPress={() => { void runCatalogAction(() => moveAccount(db, item.id, -1)); }} style={styles.move}><ChevronUp color={colors.textMuted} size={18} /></Pressable><Pressable accessibilityRole="button" disabled={changingCatalog} accessibilityLabel={`Mover ${(item as Account).name} para baixo`} onPress={() => { void runCatalogAction(() => moveAccount(db, item.id, 1)); }} style={styles.move}><ChevronDown color={colors.textMuted} size={18} /></Pressable></>}
+      <Pressable accessibilityRole="button" disabled={changingSchedule || changingCatalog} accessibilityLabel={`${hasArchiveFilter && isArchived(item) ? "Restaurar" : "Opções de"} ${"title" in item ? item.title : item.name}`} onPress={() => openActions(item)} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><Text style={[styles.more, { color: colors.textMuted }]}>{hasArchiveFilter && isArchived(item) ? "↶" : "•••"}</Text></Pressable>
     </View>)}</View>
-    <Text style={[styles.hint, { color: colors.textMuted }]}>Toque em ••• para ver as ações disponíveis.</Text>
+    <Text style={[styles.hint, { color: colors.textMuted }]}>{hasArchiveFilter && showArchived ? "Toque no cadastro para restaurar. Histórico preservado." : "Toque em ••• para ver as ações disponíveis."}</Text>
   </Screen></ScrollView><BottomNav />
-  <Modal visible={open || !!scheduleActions} animationType={reduceMotion === false ? "slide" : "fade"} transparent onRequestClose={() => { if (!saving) { setOpen(false); setScheduleActions(null); } }}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}>{scheduleActions ? <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+  <Modal visible={open || !!scheduleActions || !!accountActions} animationType={reduceMotion === false ? "slide" : "fade"} transparent onRequestClose={() => { if (!saving) { setOpen(false); setScheduleActions(null); setAccountActions(null); } }}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}>{accountActions ? <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text, flex: 1 }]}>{accountActions.name}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar opções da conta" onPress={() => setAccountActions(null)} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><X color={colors.textMuted} size={22} /></Pressable></View>
+    <PrimaryButton onPress={() => { const account = accountActions; setAccountActions(null); openAccountEdit(account); }}>Editar conta</PrimaryButton>
+    <Pressable accessibilityRole="button" onPress={() => { const account = accountActions; setAccountActions(null); router.push({ pathname: "/balance-correction", params: { accountId: account.id } }); }} style={styles.scheduleAction}><Text style={{ color: colors.text }}>Corrigir saldo</Text></Pressable>
+    {!accountActions.isPrimary && <Pressable accessibilityRole="button" onPress={() => { const account = accountActions; setAccountActions(null); void runCatalogAction(() => setPrimaryAccount(db, account.id)); }} style={styles.scheduleAction}><Text style={{ color: colors.text }}>Tornar principal</Text></Pressable>}
+    <Pressable accessibilityRole="button" onPress={() => { const account = accountActions; setAccountActions(null); void archive(account); }} style={styles.scheduleAction}><Text style={{ color: colors.negative }}>Arquivar conta</Text></Pressable>
+  </View> : scheduleActions ? <View accessibilityViewIsModal style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
     <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text, flex: 1 }]}>{scheduleActions?.title}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar opções" onPress={() => setScheduleActions(null)} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}><X color={colors.textMuted} size={22} /></Pressable></View>
     <PrimaryButton onPress={() => { if (scheduleActions) openScheduleEdit(scheduleActions); }}>Editar recorrência</PrimaryButton>
     <Pressable accessibilityRole="button" onPress={() => { if (scheduleActions) confirmScheduleState(scheduleActions); }} style={styles.scheduleAction}><Text style={{ color: colors.text }}>{scheduleActions?.isActive ? "Pausar" : "Retomar"}</Text></Pressable>

@@ -7,8 +7,14 @@ const base: Transaction = {
   id: "one", type: "expense", amountCents: 5000, categoryId: "food", categoryName: "Alimentação", categoryIcon: "tag",
   description: "Almoço", occurredAt: new Date(2026, 8, 24, 10).getTime(), createdAt: 0, updatedAt: 0,
   accountId: "main", accountName: "Principal", title: "Restaurante", notes: "Equipe", status: "paid", kind: "standard",
-  transferGroupId: null, goalId: null, loanId: null, scheduleId: null,
+  transferGroupId: null, goalId: null, loanId: null, scheduleId: null, tags: [],
 };
+
+test("transaction search finds tags without changing other filters", () => {
+  const items = [{ ...base, tags: ["Viagem executiva"] }, { ...base, id: "two", tags: ["Trabalho"], accountId: "other" }];
+  const filters = { month: new Date(2026, 8, 1), type: "all" as const, query: "VIAGEM", accountId: "main", categoryId: null, status: "all" as const, kind: "all" as const };
+  assert.deepEqual(filterTransactions(items, filters).map((item) => item.id), ["one"]);
+});
 
 test("transaction filters combine month, account, category, status, kind and search", () => {
   const items = [base, { ...base, id: "two", accountId: "other", status: "pending" as const }, { ...base, id: "three", occurredAt: new Date(2026, 9, 1).getTime() }];

@@ -3,6 +3,7 @@ import { createId } from "../database/ids";
 import type { TransactionType } from "../types/category";
 import type { Transaction, TransactionDraft } from "../types/transaction";
 import { validateTransactionDraft } from "../utils/validation";
+import { normalizeTransactionTags, readTransactionTags } from "../utils/transactionTags";
 
 type TransactionRow = {
   initial_loan_id: string | null;
@@ -20,6 +21,7 @@ type TransactionRow = {
   account_name: string;
   title: string | null;
   notes: string | null;
+  tags_json: string;
   status: "paid" | "pending";
   kind: "standard" | "transfer" | "correction";
   transfer_group_id: string | null;
@@ -45,6 +47,7 @@ function mapTransaction(row: TransactionRow): Transaction {
     accountName: row.account_name,
     title: row.title,
     notes: row.notes,
+    tags: readTransactionTags(row.tags_json),
     status: row.status,
     kind: row.kind,
     transferGroupId: row.transfer_group_id,
@@ -57,7 +60,7 @@ function mapTransaction(row: TransactionRow): Transaction {
 const selectBase = `
   SELECT t.id, t.type, t.amount_cents, t.category_id, c.name AS category_name,
     c.icon AS category_icon, t.description, t.occurred_at, t.created_at, t.updated_at,
-    t.account_id, a.name AS account_name, t.title, t.notes, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id, il.id AS initial_loan_id
+    t.account_id, a.name AS account_name, t.title, t.notes, t.tags_json, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id, il.id AS initial_loan_id
   FROM transactions t JOIN categories c ON c.id = t.category_id
   JOIN accounts a ON a.id = t.account_id
   LEFT JOIN loans il ON il.initial_transaction_id = t.id
@@ -137,7 +140,7 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
   }
   const accountId = await validateTransactionReferences(tx, draft);
   const result = await tx.runAsync(
-    "INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, source_suggestion_id, account_id, title, notes, status, kind, goal_id, loan_id, schedule_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_suggestion_id) DO NOTHING",
+    "INSERT INTO transactions (id, type, amount_cents, category_id, description, occurred_at, created_at, updated_at, source_suggestion_id, account_id, title, notes, status, kind, goal_id, loan_id, schedule_id, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_suggestion_id) DO NOTHING",
     id,
     draft.type,
     draft.amountCents,
@@ -148,13 +151,14 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
     now,
     sourceSuggestionId ?? null,
     accountId,
-    draft.title?.trim() || draft.description?.trim() || null,
+    draft.title === undefined ? draft.description?.trim() || null : draft.title?.trim() || null,
     draft.notes?.trim() || null,
     draft.status ?? "paid",
     draft.kind ?? "standard",
     draft.goalId ?? null,
     draft.loanId ?? null,
     draft.scheduleId ?? null,
+    JSON.stringify(normalizeTransactionTags(draft.tags ?? [])),
   );
   if (result.changes === 0 && sourceSuggestionId) {
     const existing = await tx.getFirstAsync<{ id: string }>("SELECT id FROM transactions WHERE source_suggestion_id = ?", sourceSuggestionId);
@@ -167,7 +171,7 @@ export async function createTransaction(db: SQLiteDatabase, draft: TransactionDr
 
 export async function updateTransaction(db: SQLiteDatabase, id: string, draft: TransactionDraft): Promise<void> {
   await db.withExclusiveTransactionAsync(async (tx) => {
-  const existing = await tx.getFirstAsync<ExistingReferences & { kind: Transaction["kind"]; amount_cents: number; title: string | null; notes: string | null; status: Transaction["status"] }>("SELECT kind, amount_cents, title, notes, loan_id, goal_id, schedule_id, account_id, category_id, type, status FROM transactions WHERE id = ?", id);
+  const existing = await tx.getFirstAsync<ExistingReferences & { kind: Transaction["kind"]; amount_cents: number; title: string | null; notes: string | null; tags_json: string; status: Transaction["status"] }>("SELECT kind, amount_cents, title, notes, tags_json, loan_id, goal_id, schedule_id, account_id, category_id, type, status FROM transactions WHERE id = ?", id);
   if (!existing) throw new Error("Lançamento não encontrado.");
   if (existing.kind !== "standard" || (draft.kind && draft.kind !== "standard")) throw new Error("Transferências e correções não podem ser editadas como lançamentos comuns.");
   const accountId = await validateTransactionReferences(tx, draft, existing);
@@ -180,7 +184,7 @@ export async function updateTransaction(db: SQLiteDatabase, id: string, draft: T
     if (principal !== loan.principal_cents) await tx.runAsync("INSERT INTO activity_log (entity_type, entity_id, action, occurred_at) VALUES ('loan', ?, ?, ?)", loan.id, `loan_reference_adjusted:${loan.principal_cents}:${principal}`, Date.now());
   }
   await tx.runAsync(
-    "UPDATE transactions SET type = ?, amount_cents = ?, category_id = ?, description = ?, occurred_at = ?, account_id = ?, title = ?, notes = ?, status = ?, kind = ?, goal_id = ?, loan_id = ?, schedule_id = ?, updated_at = ? WHERE id = ?",
+    "UPDATE transactions SET type = ?, amount_cents = ?, category_id = ?, description = ?, occurred_at = ?, account_id = ?, title = ?, notes = ?, status = ?, kind = ?, goal_id = ?, loan_id = ?, schedule_id = ?, tags_json = ?, updated_at = ? WHERE id = ?",
     draft.type,
     draft.amountCents,
     draft.categoryId,
@@ -194,6 +198,7 @@ export async function updateTransaction(db: SQLiteDatabase, id: string, draft: T
     draft.goalId === undefined ? existing.goal_id : draft.goalId,
     draft.loanId === undefined ? existing.loan_id : draft.loanId,
     draft.scheduleId === undefined ? existing.schedule_id : draft.scheduleId,
+    draft.tags === undefined ? existing.tags_json : JSON.stringify(normalizeTransactionTags(draft.tags)),
     Date.now(),
     id,
   );

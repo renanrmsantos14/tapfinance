@@ -22,7 +22,7 @@ export function filterTransactions(items: Transaction[], filters: TransactionFil
     if (filters.categoryId && item.categoryId !== filters.categoryId) return false;
     if (filters.status !== "all" && item.status !== filters.status) return false;
     if (filters.kind !== "all" && item.kind !== filters.kind) return false;
-    return !query || [item.title, item.description, item.notes, item.categoryName, item.accountName]
+    return !query || [item.title, item.description, item.notes, item.categoryName, item.accountName, ...item.tags]
       .some((value) => value?.toLocaleLowerCase("pt-BR").includes(query));
   });
 }

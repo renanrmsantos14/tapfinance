@@ -7,11 +7,25 @@ type Release = {
 export type Update = { version: string; url: string; digest: string };
 
 export function isNewerVersion(latest: string, installed: string): boolean {
-  const parse = (value: string) => /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value)?.slice(1).map(Number);
-  const next = parse(latest);
-  const current = parse(installed);
-  if (!next || !current) throw new Error("Formato de versão inválido.");
-  return next.some((part, index) => part > current[index] && next.slice(0, index).every((prefix, i) => prefix === current[i]));
+  const parse = (value: string) => {
+    const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*))?(?:\+[\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*)?$/.exec(value);
+    const prerelease = match?.[4]?.split(".") ?? [];
+    if (!match || prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part[0] === "0")) throw new Error("Formato de versão inválido.");
+    return { core: match.slice(1, 4).map((part) => BigInt(part)), prerelease };
+  };
+  const next = parse(latest); const current = parse(installed);
+  for (let i = 0; i < 3; i += 1) if (next.core[i] !== current.core[i]) return next.core[i] > current.core[i];
+  if (!next.prerelease.length || !current.prerelease.length) return !next.prerelease.length && !!current.prerelease.length;
+  for (let i = 0; i < Math.max(next.prerelease.length, current.prerelease.length); i += 1) {
+    const a = next.prerelease[i]; const b = current.prerelease[i];
+    if (a === undefined || b === undefined) return a !== undefined;
+    if (a === b) continue;
+    const numericA = /^\d+$/.test(a); const numericB = /^\d+$/.test(b);
+    if (numericA && numericB) return BigInt(a) > BigInt(b);
+    if (numericA !== numericB) return !numericA;
+    return a > b;
+  }
+  return false;
 }
 
 export async function checkForUpdate(installedVersion: string): Promise<Update | null> {

@@ -17,10 +17,10 @@ function mapCategory(row: CategoryRow): Category {
   return { id: row.id, name: row.name, icon: row.icon, type: row.type, position: row.position, parentId: row.parent_id, color: row.color, isActive: row.is_active === 1 };
 }
 
-export async function listCategories(db: SQLiteDatabase, type: TransactionType): Promise<Category[]> {
+export async function listCategories(db: SQLiteDatabase, type: TransactionType, includeArchived = false): Promise<Category[]> {
   const rows = await db.getAllAsync<CategoryRow>(
-    "SELECT id, name, icon, type, position, parent_id, color, is_active FROM categories WHERE type = ? AND is_active = 1 ORDER BY position",
-    type,
+    "SELECT id, name, icon, type, position, parent_id, color, is_active FROM categories WHERE type = ? AND (? = 1 OR is_active = 1) ORDER BY is_active DESC, position, id",
+    type, includeArchived ? 1 : 0,
   );
   return rows.map(mapCategory);
 }
@@ -64,9 +64,24 @@ export async function updateCategory(db: SQLiteDatabase, id: string, input: { na
 }
 
 export async function archiveCategory(db: SQLiteDatabase, id: string): Promise<void> {
-  await db.withTransactionAsync(async () => {
-    await db.runAsync("UPDATE categories SET parent_id = NULL WHERE parent_id = ?", id);
-    await db.runAsync("UPDATE categories SET is_active = 0 WHERE id = ?", id);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await getCategory(tx, id);
+    if (!current) throw new Error("Categoria não encontrada.");
+    if (!current.isActive) return;
+    await tx.runAsync("UPDATE categories SET parent_id = NULL WHERE parent_id = ?", id);
+    await tx.runAsync("UPDATE categories SET is_active = 0 WHERE id = ?", id);
+  });
+}
+
+export async function restoreCategory(db: SQLiteDatabase, id: string): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await getCategory(tx, id);
+    if (!current) throw new Error("Categoria não encontrada.");
+    if (current.isActive) return;
+    // Keep a surviving valid parent, but never infer hierarchy removed at archive time.
+    const parent = current.parentId ? await getCategory(tx, current.parentId) : null;
+    const parentId = parent?.isActive && parent.type === current.type && !parent.parentId && parent.id !== current.id ? parent.id : null;
+    await tx.runAsync("UPDATE categories SET is_active = 1, parent_id = ? WHERE id = ?", parentId, id);
   });
 }
 

@@ -16,6 +16,7 @@ export type Transaction = {
   accountName: string;
   title: string | null;
   notes: string | null;
+  tags: string[];
   status: "paid" | "pending";
   kind: "standard" | "transfer" | "correction";
   transferGroupId: string | null;
@@ -33,6 +34,7 @@ export type TransactionDraft = {
   accountId?: string;
   title?: string | null;
   notes?: string | null;
+  tags?: string[];
   status?: "paid" | "pending";
   kind?: "standard" | "transfer" | "correction";
   goalId?: string | null;
