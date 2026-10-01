@@ -89,3 +89,16 @@ TypeScript, os 172 testes e a exportação Android de 3.340 módulos passaram; H
 Mantidos cálculos, prazos, direção do empréstimo, histórico, aviso de legado/desembolso excluído, filtro de candidatos pagos e confirmação explícita de vínculo. Arquivamento/restauração e compensação continuam com as mesmas regras. O botão de novo lançamento também fica bloqueado enquanto salva; o ícone usa accentContrast nos dois temas. Nenhuma alteração em persistência, schema, versão ou release. O modal já respeitava reduzir movimentos e continua assim.
 
 TypeScript, os 172 testes e a exportação Android final de 3.340 módulos passaram; Hermes `entry-6aea5c11b228441f27fca5bf22348f32.hbc`. Diff sem erro de whitespace. ADB consultado sem dispositivo conectado; aparência, escala de fonte, TalkBack, teclado e toque ainda não comprovados. A revisão integral permanece aberta: cadastros, calendário, relatórios, atividade, seletor de versões, feedback dos filtros/estados e inspeção de todas as telas no Android.
+
+## Fechamento para beta.7
+
+Pedido posterior do usuário encerra a ampliação do redesign nesta entrega e solicita release. Incluído somente o ajuste já iniciado nos cadastros.
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Cabeçalho pesado e contagem antiga durante erro | FormHeader e contagem somente após carregamento válido | Consistência e estado verdadeiro |
+| Reordenação de 24 dp e opções de 44 dp | QuietButton de 48 dp, com grupo que permite quebra | Preservar todas as ações com alcance maior |
+| Lista com borda e marcadores grandes | Linhas simples e marcadores discretos | Menos decoração |
+| Filtro com feedback incompleto | SelectionChoice compartilhado, radio/disabled e feedback | Clareza do estado |
+
+Os editores de cadastro não receberam revisão completa. Demais pendências visuais e QA nativo anteriores permanecem explícitos; publicar a beta não declara conclusão integral do objetivo.
