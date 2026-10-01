@@ -19,3 +19,26 @@ Verificação: TypeScript, 170 testes e exportação Android passaram (3.339 mó
 Limites: ADB sem dispositivo conectado; `react-native-web` não está instalado. Não instalar dependências apenas para simular aprovação visual. Validação visual e interativa no Android permanece pendente. Exportação Android é uma camada separada, não validação no dispositivo.
 
 O redesign integral ainda não está concluído. Próximos pontos: hierarquia e densidade de Início/Orçamentos/Ajustes/formulários, pequenos controles restantes, valores longos, texto ampliado, organização de Mais por grupos, estados de erro e teste nativo de navegação/entrada/atualização. A beta.6 publicada não inclui este lote.
+
+## Segundo lote — telas principais e leitura
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Contas em carrossel antes do saldo e logo decorativo | Saldo primeiro, contas em linhas com tipo em português | Priorizar consulta e reduzir chrome |
+| Resumos de metas/orçamentos/empréstimos em cards | Linhas discretas, barras finas e feedback de toque | Menos blocos sem perder tarefas |
+| Percentuais usam cores arbitrárias do cadastro | Texto usa a paleta; cor escolhida permanece nas barras | Não comprometer a leitura com uma cor clara |
+| Barra de orçamento mostra ao menos 1% mesmo sem gastos | Zero gasto tem preenchimento zero | Não inventar progresso visual |
+| Editar/arquivar orçamento são textos com alvo pequeno | QuietButton de 48 dp e ações explícitas | Toque previsível sem depender do long press |
+| Formulário tem chips de 36 dp e campos de 34 dp | Opções, fechar e limites com mínimo de 48 dp | Melhorar uso por toque e texto ampliado |
+| Botão de atualizações tem branco fixo | Foreground `accentContrast` por tema | Corrigir contraste no tema escuro |
+| Ícone/spinner dentro do Text do botão primário | Ícone/spinner e label como filhos separados | Respeitar composição de componentes nativos |
+| Valor do lançamento disputa largura com descrição | Valor na área de conteúdo, sem truncamento forçado | Dar espaço a nomes e valores longos |
+| Mais é uma lista única | Organização, Acompanhamento e Preferências | Agrupar os mesmos dez destinos |
+
+Também removidos rótulos redundantes de cabeçalho, bordas externas dos grupos em Ajustes e do histórico. Cabeçalhos de seção permitem quebra; métricas não reduzem automaticamente o tamanho do texto para caber. Resumos do histórico podem quebrar em linhas. Ações de dados desabilitadas têm estado anunciado e visual. Não houve alteração de schema, dados, importação/exportação, notificações, versionamento ou release.
+
+Verificação final deste lote: TypeScript, 172 testes e exportação Android de 3.340 módulos aprovados; Hermes `entry-7e9b98b7219a9a492a1880964d8c5004.hbc`. Os dois testes novos calculam contraste de dez pares da paleta em cada tema (mínimo 4,5:1); não cobrem automaticamente cada combinação ou estado da UI. Diff sem erro de whitespace.
+
+Ambiente consultado: sem AVD instalado; sem suporte web instalado. Portanto, nenhum clique, teclado, TalkBack ou screenshot nativo foi validado neste lote. As mudanças de layout e composição precisam desse teste; exportação não o substitui.
+
+O escopo integral permanece aberto: revisar `quick-entry`, `transaction/[id]`, `collection/[kind]`, `tracker/[kind]/[id]`, `budget/[id]`, transferência, correção de saldo, calendário, relatórios, atividade e seletor de versões; completar feedback/labels do histórico; padronizar os dois modais restantes com reduzir movimentos; conferir todas as telas com dados reais, nomes/valores longos e escala de fonte, navegação e teclado no Android. Estas pendências atualizam a lista do primeiro lote, não reduzem o objetivo de revisar toda a UI/UX/animação.

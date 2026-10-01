@@ -228,7 +228,6 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Screen scroll={false}>
           <Reveal style={styles.header}>
-            <Text style={[styles.eyebrow, { color: colors.accent }]}>PREFERÊNCIAS</Text>
             <Text style={[styles.title, { color: colors.text }]}>Ajustes</Text>
             <Text style={[styles.subtitle, { color: colors.textMuted }]}>Integrações, dados e informações do app.</Text>
           </Reveal>
@@ -301,22 +300,22 @@ export default function SettingsScreen() {
 
           <View style={styles.sectionGap}><Label>Dados e privacidade</Label></View>
           <View style={[styles.rows, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void exportData()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: dataBusy }} disabled={dataBusy} onPress={() => void exportData()} style={({ pressed }) => [styles.dataRow, { opacity: dataBusy ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.surfaceMuted }]}><Download color={colors.text} size={18} /></View>
               <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Exportar lançamentos</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Arquivo CSV para guardar ou analisar</Text></View>
               <ChevronRight color={colors.textMuted} size={18} />
             </Pressable>
-            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void chooseCsv()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: dataBusy }} disabled={dataBusy} onPress={() => void chooseCsv()} style={({ pressed }) => [styles.dataRow, { opacity: dataBusy ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.surfaceMuted }]}><FileUp color={colors.text} size={18} /></View>
               <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Importar CSV</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Adiciona lançamentos de um arquivo</Text></View>
               <ChevronRight color={colors.textMuted} size={18} />
             </Pressable>
-            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void shareBackup()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: dataBusy }} disabled={dataBusy} onPress={() => void shareBackup()} style={({ pressed }) => [styles.dataRow, { opacity: dataBusy ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.accentSoft }]}><Share2 color={colors.accent} size={18} /></View>
               <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Backup completo</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Contas, categorias, lançamentos e planejamento</Text></View>
               <ChevronRight color={colors.textMuted} size={18} />
             </Pressable>
-            <Pressable accessibilityRole="button" disabled={dataBusy} onPress={() => void chooseBackup()} style={({ pressed }) => [styles.dataRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: dataBusy }} disabled={dataBusy} onPress={() => void chooseBackup()} style={({ pressed }) => [styles.dataRow, { opacity: dataBusy ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.warningSoft }]}><RotateCcw color={colors.warning} size={18} /></View>
               <View style={styles.cardCopy}><Text style={[styles.cardTitle, { color: colors.text }]}>Restaurar backup</Text><Text style={[styles.cardDescription, { color: colors.textMuted }]}>Substitui os dados após confirmar o arquivo</Text></View>
               <ChevronRight color={colors.textMuted} size={18} />
@@ -331,8 +330,8 @@ export default function SettingsScreen() {
             <Text style={[styles.versionName, { color: colors.text }]}>TapFinance</Text>
             <Text style={[styles.version, { color: colors.textMuted }]}>Versão {appVersion} · build {androidVersionCode ?? "—"}</Text>
             {Platform.OS === "android" && <Pressable accessibilityRole="button" accessibilityState={{ disabled: checkingUpdate || downloadingUpdate }} disabled={checkingUpdate || downloadingUpdate} onPress={() => void checkUpdate()} style={({ pressed }) => [styles.updateButton, { backgroundColor: colors.accent, opacity: checkingUpdate || downloadingUpdate || pressed ? 0.65 : 1 }]}>
-              <Download color="#fff" size={17} />
-              <Text style={styles.updateText}>{checkingUpdate ? "Verificando…" : downloadingUpdate ? "Baixando…" : "Verificar atualizações"}</Text>
+              <Download color={colors.accentContrast} size={17} />
+              <Text style={[styles.updateText, { color: colors.accentContrast }]}>{checkingUpdate ? "Verificando…" : downloadingUpdate ? "Baixando…" : "Verificar atualizações"}</Text>
             </Pressable>}
           </View>
         </Screen>
@@ -347,32 +346,31 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingBottom: 28 },
   header: { marginBottom: 28 },
-  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.7, marginBottom: 8 },
-  title: { fontSize: 30, fontWeight: "700", letterSpacing: -1.1 },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.6 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6 },
-  card: { borderWidth: 1, borderRadius: radius.lg, overflow: "hidden", marginTop: 10 },
+  card: { borderRadius: radius.md, marginTop: 10 },
   cardHeader: { padding: 18, flexDirection: "row", alignItems: "center", gap: 13 },
   cardIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  cardCopy: { flex: 1, gap: 4 },
+  cardCopy: { flex: 1, minWidth: 0, gap: 4 },
   cardTitle: { fontSize: 15, fontWeight: "700" },
   cardDescription: { fontSize: 12.5, lineHeight: 18 },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
-  actionRow: { borderTopWidth: StyleSheet.hairlineWidth, minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18 },
+  actionRow: { borderTopWidth: StyleSheet.hairlineWidth, minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18, paddingVertical: 12 },
   actionText: { flex: 1, fontSize: 14, fontWeight: "700" },
   help: { borderRadius: radius.lg, padding: 17, marginTop: 14, flexDirection: "row", alignItems: "flex-start", gap: 12 },
   helpCopy: { flex: 1 },
   helpTitle: { fontSize: 14, fontWeight: "700", marginBottom: 5 },
   helpText: { fontSize: 13, lineHeight: 19 },
-  inline: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 7, alignSelf: "flex-start" },
+  inline: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 7, alignSelf: "flex-start" },
   inlineText: { fontSize: 13, fontWeight: "700" },
   sectionGap: { marginTop: 28 },
-  rows: { borderWidth: 1, borderRadius: radius.lg, overflow: "hidden", marginTop: 10 },
-  dataRow: { minHeight: 74, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16 },
+  rows: { borderRadius: radius.md, marginTop: 10 },
+  dataRow: { minHeight: 74, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   rowIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   versionCard: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 28, paddingTop: 18, alignItems: "center" },
   versionName: { fontSize: 13, fontWeight: "700" },
   version: { fontSize: 12, marginTop: 4 },
-  updateButton: { minHeight: 46, borderRadius: radius.md, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18, marginTop: 18 },
-  updateText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  updateButton: { minHeight: 48, borderRadius: radius.md, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18, paddingVertical: 12, marginTop: 18 },
+  updateText: { fontSize: 14, fontWeight: "700" },
 });

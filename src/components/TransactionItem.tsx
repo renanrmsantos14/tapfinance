@@ -10,7 +10,7 @@ export function TransactionItem({ transaction, onPress, isLast = false }: { tran
   const income = transaction.type === "income";
   const Icon = income ? ArrowUpRight : ArrowDownLeft;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${income ? "Receita" : "Despesa"} de ${formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)} em ${transaction.categoryName}`} accessibilityHint="Abre os detalhes do lançamento" onPress={onPress} style={({ pressed }) => [styles.row, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border, borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${transaction.title ? `${transaction.title}. ` : ""}${income ? "Receita" : "Despesa"} de ${formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)} em ${transaction.categoryName}, conta ${transaction.accountName}, ${formatShortDate(transaction.occurredAt)}, ${transaction.status === "pending" ? "pendente" : "pago"}`} accessibilityHint="Abre os detalhes do lançamento" onPress={onPress} style={({ pressed }) => [styles.row, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border, borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth }]}>
       <View style={[styles.icon, { backgroundColor: income ? colors.positiveSoft : colors.negativeSoft }]}>
         <Icon color={income ? colors.positive : colors.negative} size={19} strokeWidth={2.4} />
       </View>
@@ -19,8 +19,8 @@ export function TransactionItem({ transaction, onPress, isLast = false }: { tran
         <Text style={[styles.meta, { color: colors.textMuted }]}>
           {transaction.categoryName} · {transaction.accountName} · {formatShortDate(transaction.occurredAt)} · {transaction.description || formatTime(transaction.occurredAt)}{transaction.status === "pending" ? " · Pendente" : ""}
         </Text>
+        <Text style={[styles.amount, { color: income ? colors.positive : colors.text }]}>{income ? "+" : "−"}{formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)}</Text>
       </View>
-      <Text style={[styles.amount, { color: income ? colors.positive : colors.text }]}>{income ? "+" : "−"}{formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)}</Text>
       <ChevronRight color={colors.textMuted} size={17} />
     </Pressable>
   );
@@ -28,9 +28,9 @@ export function TransactionItem({ transaction, onPress, isLast = false }: { tran
 
 const styles = StyleSheet.create({
   row: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
-  icon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  detail: { flex: 1, gap: 3 },
+  icon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  detail: { flex: 1, minWidth: 0, gap: 4 },
   category: { fontSize: 15, fontWeight: "600" },
-  meta: { fontSize: 12 },
-  amount: { fontSize: 14, fontWeight: "700", letterSpacing: -0.2 },
+  meta: { fontSize: 12, lineHeight: 18 },
+  amount: { fontSize: 15, fontWeight: "600", fontVariant: ["tabular-nums"], marginTop: 2 },
 });

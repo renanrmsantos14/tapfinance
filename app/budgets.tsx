@@ -4,7 +4,7 @@ import { Plus, X } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
-import { EmptyState, PrimaryButton, Screen, SectionHeader, useReducedMotion } from "../src/components/ui";
+import { EmptyState, PrimaryButton, QuietButton, Screen, SectionHeader, useReducedMotion } from "../src/components/ui";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { archiveBudget, createBudget, getBudgetConfiguration, listBudgets, updateBudget, type BudgetConfiguration } from "../src/repositories/financeRepository";
 import type { Budget, BudgetCycle } from "../src/types/finance";
@@ -107,33 +107,30 @@ export default function BudgetsScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
         <View style={styles.header}>
-          <View><Text style={[styles.title, { color: colors.text }]}>Orçamentos</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>Acompanhe o ritmo dos seus gastos.</Text></View>
+          <View style={{ flex: 1, minWidth: 0 }}><Text style={[styles.title, { color: colors.text }]}>Orçamentos</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>Limites e gastos do período</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel="Criar orçamento" onPress={openCreate} style={({ pressed }) => [styles.add, { backgroundColor: colors.surfaceStrong, transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }]}><Plus color={colors.text} size={22} /></Pressable>
         </View>
         {loading ? <Text style={{ color: colors.textMuted, marginTop: 24 }}>Atualizando orçamentos…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : budgets.length === 0 ? (
-          <Pressable onPress={openCreate} style={[styles.empty, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <PieChartMark color={colors.textMuted} /><Text style={[styles.emptyTitle, { color: colors.text }]}>Seu primeiro orçamento</Text><Text style={[styles.emptyText, { color: colors.textMuted }]}>Defina um limite mensal ou semanal e veja o progresso conforme registra seus lançamentos.</Text>
-            <Text style={[styles.emptyAction, { color: colors.accent }]}>Criar orçamento</Text>
-          </Pressable>
+          <EmptyState embedded title="Seu primeiro orçamento" description="Defina um limite mensal ou semanal para acompanhar os gastos." actionLabel="Criar orçamento" onAction={openCreate} />
         ) : <>
           <SectionHeader title="Período atual" />
           {budgets.map((budget) => {
             const progress = Math.min(budget.spentCents / Math.max(budget.amountCents, 1), 1);
             const remaining = budget.amountCents - budget.spentCents;
             const progressColor = remaining < 0 ? colors.negative : budget.color;
-            return <View key={budget.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={`Detalhes do orçamento ${budget.name}`} onPress={() => router.push(`/budget/${budget.id}`)} onLongPress={() => openActions(budget)}>
-              <View style={styles.cardTop}><View style={{ flex: 1 }}><Text style={[styles.cardName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.cycle, { color: colors.textMuted }]}>{budget.cycle === "monthly" ? "Este mês" : budget.cycle === "weekly" ? "Esta semana" : "Período personalizado"}</Text></View><Text style={[styles.percent, { color: progressColor }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
-              <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${Math.max(1, progress * 100)}%`, backgroundColor: progressColor }]} /></View>
+            return <View key={budget.id} style={[styles.card, { borderColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={`Detalhes do orçamento ${budget.name}`} onPress={() => router.push(`/budget/${budget.id}`)} onLongPress={() => openActions(budget)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <View style={styles.cardTop}><View style={{ flex: 1, minWidth: 0 }}><Text style={[styles.cardName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.cycle, { color: colors.textMuted }]}>{budget.cycle === "monthly" ? "Este mês" : budget.cycle === "weekly" ? "Esta semana" : "Período personalizado"}</Text></View><Text style={[styles.percent, { color: remaining < 0 ? colors.negative : colors.text }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
+              <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: progressColor }]} /></View>
               <View style={styles.amountRow}><Text style={[styles.amount, { color: colors.text }]}>{formatCentsByCurrency(budget.spentCents, budget.currency)} <Text style={[styles.muted, { color: colors.textMuted }]}>de {formatCentsByCurrency(budget.amountCents, budget.currency)}</Text></Text><Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima " : "Restam "}{formatCentsByCurrency(Math.abs(remaining), budget.currency)}</Text></View>
-            </Pressable><View style={styles.cardActions}><Pressable accessibilityRole="button" accessibilityLabel={`Editar orçamento ${budget.name}`} onPress={() => { void openEdit(budget); }}><Text style={[styles.cardAction, { color: colors.accent }]}>Editar</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Arquivar orçamento ${budget.name}`} onPress={() => confirmArchive(budget)}><Text style={[styles.cardAction, { color: colors.textMuted }]}>Arquivar</Text></Pressable></View></View>;
+            </Pressable><View style={styles.cardActions}><QuietButton accessibilityLabel={`Editar orçamento ${budget.name}`} onPress={() => { void openEdit(budget); }} style={styles.cardAction}><Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>Editar</Text></QuietButton><QuietButton accessibilityLabel={`Arquivar orçamento ${budget.name}`} onPress={() => confirmArchive(budget)} style={styles.cardAction}><Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "600" }}>Arquivar</Text></QuietButton></View></View>;
           })}
-          <Pressable accessibilityRole="button" onPress={openCreate} style={[styles.newRow, { borderColor: colors.border }]}><Plus color={colors.accent} size={18} /><Text style={[styles.newText, { color: colors.accent }]}>Adicionar orçamento</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={openCreate} style={({ pressed }) => [styles.newRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}><Plus color={colors.accent} size={18} /><Text style={[styles.newText, { color: colors.accent }]}>Adicionar orçamento</Text></Pressable>
         </>}
       </Screen></ScrollView>
       <BottomNav />
-      <Modal visible={modalOpen} animationType={reduceMotion === false ? "slide" : "fade"} transparent onRequestClose={() => { if (!saving) setModalOpen(false); }}>
+      <Modal visible={modalOpen} animationType={reduceMotion === false ? "slide" : "none"} transparent onRequestClose={() => { if (!saving) setModalOpen(false); }}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}><ScrollView keyboardShouldPersistTaps="handled" style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, { color: colors.text }]}>{editing ? "Editar orçamento" : "Novo orçamento"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar" disabled={saving} onPress={() => setModalOpen(false)} style={styles.close}><X color={colors.textMuted} size={20} /></Pressable></View>
+          <View style={styles.sheetHeader}><Text accessibilityRole="header" style={[styles.sheetTitle, { color: colors.text }]}>{editing ? "Editar orçamento" : "Novo orçamento"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar" accessibilityState={{ disabled: saving }} disabled={saving} onPress={() => setModalOpen(false)} style={({ pressed }) => [styles.close, { opacity: saving ? 0.5 : pressed ? 0.6 : 1 }]}><X color={colors.textMuted} size={20} /></Pressable></View>
           <Text style={[styles.label, { color: colors.textMuted }]}>NOME</Text>
           <TextInput accessibilityLabel="Nome do orçamento" placeholder="Ex.: Gastos do mês" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} maxLength={50} />
           <Text style={[styles.label, { color: colors.textMuted }]}>MOEDA</Text>
@@ -160,20 +157,15 @@ export default function BudgetsScreen() {
   );
 }
 
-function PieChartMark({ color }: { color: string }) { return <View style={[styles.mark, { borderColor: color }]}><View style={[styles.markSlice, { borderLeftColor: color, borderTopColor: color }]} /></View>; }
-
 const styles = StyleSheet.create({
   root: { flex: 1 }, scroll: { flexGrow: 1, paddingBottom: 22 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 24 },
   title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.7 }, subtitle: { fontSize: 13, marginTop: 5 },
   add: { width: 48, height: 48, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  empty: { minHeight: 320, borderWidth: 1, borderRadius: radius.lg, padding: 26, alignItems: "center", justifyContent: "center", marginTop: 12 },
-  mark: { width: 56, height: 56, borderWidth: 4, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 18 }, markSlice: { width: 19, height: 19, borderWidth: 3, borderRadius: 3, transform: [{ rotate: "45deg" }] },
-  emptyTitle: { fontSize: 18, fontWeight: "700" }, emptyText: { fontSize: 13, lineHeight: 20, textAlign: "center", marginTop: 8, maxWidth: 270 }, emptyAction: { fontSize: 14, fontWeight: "700", marginTop: 20 },
-  card: { borderWidth: 1, borderRadius: radius.lg, padding: 18, marginTop: 12 }, cardTop: { flexDirection: "row", alignItems: "center" }, cardName: { fontSize: 17, fontWeight: "700" }, cycle: { fontSize: 12, marginTop: 3 }, percent: { fontSize: 19, fontWeight: "800" }, cardActions: { flexDirection: "row", justifyContent: "flex-end", gap: 22, marginTop: 13 }, cardAction: { fontSize: 12, fontWeight: "700", paddingVertical: 5 },
-  track: { height: 12, borderRadius: 6, overflow: "hidden", marginTop: 19 }, fill: { height: "100%", borderRadius: 6 }, amountRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 }, amount: { fontSize: 14, fontWeight: "700" }, muted: { fontWeight: "500" }, remaining: { fontSize: 12, fontWeight: "600" },
-  newRow: { minHeight: 54, borderWidth: 1, borderStyle: "dashed", borderRadius: radius.md, marginTop: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, newText: { fontSize: 14, fontWeight: "700" },
-  scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.58)", justifyContent: "flex-end" }, sheet: { maxHeight: "92%", borderTopWidth: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 }, sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }, sheetTitle: { fontSize: 20, fontWeight: "700" }, close: { width: 40, height: 40, alignItems: "center", justifyContent: "center" }, label: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 12, marginBottom: 8 }, input: { height: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, fontSize: 16 },
-  cycleRow: { flexDirection: "row", gap: 8 }, cycleOption: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 }, cycleOptionText: { fontSize: 11, fontWeight: "700" }, save: { marginTop: 24 },
-  dateRow: { flexDirection: "row", gap: 10 }, dateField: { flex: 1 }, optionalLabel: { fontWeight: "500", letterSpacing: 0 }, categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, categoryOption: { minHeight: 36, borderWidth: 1, borderRadius: radius.round, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" }, categoryLimit: { height: 34, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 8, fontSize: 11, marginTop: 5, minWidth: 112 },
+  card: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 18, marginTop: 8 }, cardTop: { flexDirection: "row", alignItems: "center", gap: 12 }, cardName: { fontSize: 17, fontWeight: "600" }, cycle: { fontSize: 13, marginTop: 4 }, percent: { fontSize: 18, fontWeight: "600", fontVariant: ["tabular-nums"] }, cardActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 8 }, cardAction: { paddingHorizontal: 12 },
+  track: { height: 5, borderRadius: 3, overflow: "hidden", marginTop: 16 }, fill: { height: "100%", borderRadius: 3 }, amountRow: { gap: 6, marginTop: 12 }, amount: { fontSize: 15, fontWeight: "600", fontVariant: ["tabular-nums"] }, muted: { fontWeight: "400" }, remaining: { fontSize: 13 },
+  newRow: { minHeight: 54, borderRadius: radius.sm, marginTop: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, newText: { fontSize: 14, fontWeight: "600" },
+  scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.58)", justifyContent: "flex-end" }, sheet: { maxHeight: "92%", borderTopWidth: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 }, sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 22 }, sheetTitle: { flex: 1, fontSize: 20, fontWeight: "600" }, close: { width: 48, height: 48, alignItems: "center", justifyContent: "center" }, label: { fontSize: 12, fontWeight: "600", letterSpacing: 0.5, marginTop: 12, marginBottom: 8 }, input: { minHeight: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16 },
+  cycleRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, cycleOption: { flexGrow: 1, flexBasis: 90, minHeight: 48, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 8 }, cycleOptionText: { fontSize: 13, fontWeight: "600", textAlign: "center" }, save: { marginTop: 24 },
+  dateRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, dateField: { flexGrow: 1, flexBasis: 130 }, optionalLabel: { fontWeight: "400", letterSpacing: 0 }, categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, categoryOption: { minHeight: 48, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", justifyContent: "center" }, categoryLimit: { minHeight: 48, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginTop: 5, minWidth: 112 },
 });

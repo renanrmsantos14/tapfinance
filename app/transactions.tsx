@@ -77,8 +77,7 @@ export default function TransactionsScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Screen scroll={false}>
           <Reveal style={styles.header}>
-            <View>
-              <Text style={[styles.eyebrow, { color: colors.accent }]}>MOVIMENTAÇÕES</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.title, { color: colors.text }]}>Transações</Text>
               <Text style={[styles.subtitle, { color: colors.textMuted }]}>{loading ? "Atualizando…" : loadError ? "Histórico indisponível" : `${filteredItems.length} neste período`}</Text>
             </View>
@@ -163,20 +162,19 @@ export default function TransactionsScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingBottom: 28 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 },
-  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 1.7, marginBottom: 8 },
-  title: { fontSize: 30, fontWeight: "700", letterSpacing: -1.1 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24 },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.6 },
   subtitle: { fontSize: 13, marginTop: 5 },
-  add: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  add: { width: 48, height: 48, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   monthPicker: { minHeight: 48, borderRadius: radius.md, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   monthArrow: { width: 48, height: 48, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" }, monthLabel: { flex: 1, textAlign: "center", fontSize: 15, fontWeight: "700", textTransform: "capitalize" },
   search: { minHeight: 48, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }, searchInput: { flex: 1, height: 46, fontSize: 14 },
-  summary: { borderWidth: 1, borderRadius: radius.lg, paddingVertical: 16, paddingHorizontal: 13, marginBottom: 14, flexDirection: "row", justifyContent: "space-between", gap: 6 },
-  summaryItem: { flex: 1 }, summaryLabel: { fontSize: 10, marginBottom: 7 },
-  summaryValue: { fontSize: 13, fontWeight: "800", letterSpacing: -0.2 },
+  summary: { paddingVertical: 16, paddingHorizontal: 12, marginBottom: 14, flexDirection: "row", flexWrap: "wrap", gap: 16 },
+  summaryItem: { flexGrow: 1, flexBasis: 110 }, summaryLabel: { fontSize: 12, marginBottom: 7 },
+  summaryValue: { fontSize: 15, fontWeight: "600", fontVariant: ["tabular-nums"] },
   filters: { flexDirection: "row", borderRadius: radius.md, padding: 4, marginBottom: 14 },
-  filter: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  filter: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   filterText: { fontSize: 13, fontWeight: "700" },
-  advancedToggle: { minHeight: 42, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }, advancedText: { flex: 1, fontSize: 12, fontWeight: "700" }, advancedPanel: { borderWidth: 1, borderRadius: radius.md, padding: 12, marginBottom: 14 }, advancedLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1, marginTop: 8, marginBottom: 7 }, chipRow: { flexDirection: "row", alignItems: "center", gap: 7 }, chip: { minHeight: 34, borderWidth: 1, borderRadius: radius.round, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" }, clearFilters: { alignSelf: "flex-start", paddingVertical: 10, marginTop: 5 },
-  list: { borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 16, overflow: "hidden" }, dayHeader: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4, marginTop: 14, marginBottom: 4 },
+  advancedToggle: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }, advancedText: { flex: 1, fontSize: 14, fontWeight: "600" }, advancedPanel: { borderRadius: radius.md, padding: 12, marginBottom: 14 }, advancedLabel: { fontSize: 12, fontWeight: "600", marginTop: 12, marginBottom: 8 }, chipRow: { flexDirection: "row", alignItems: "center", gap: 8 }, chip: { minHeight: 48, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", justifyContent: "center" }, clearFilters: { minHeight: 48, justifyContent: "center", alignSelf: "flex-start", paddingVertical: 10, marginTop: 5 },
+  list: { paddingHorizontal: 0 }, dayHeader: { fontSize: 13, fontWeight: "600", marginTop: 16, marginBottom: 4 },
 });

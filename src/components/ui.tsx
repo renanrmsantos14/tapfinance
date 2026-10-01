@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Children, useEffect, useState, type ReactNode } from "react";
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowRight, Inbox } from "lucide-react-native";
@@ -45,7 +45,9 @@ export function PrimaryButton({ children, style, onPress, disabled, accessibilit
       disabled={disabled}
       onPress={onPress}
     >
-      <Text style={[styles.primaryButtonText, { color: colors.background }]}>{children}</Text>
+      {Children.toArray(children).map((child, index) => typeof child === "string" || typeof child === "number"
+        ? <Text key={index} style={[styles.primaryButtonText, { color: colors.background }]}>{child}</Text>
+        : child)}
     </Pressable>
   );
 }
@@ -107,11 +109,11 @@ export const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 20 },
   label: { fontSize: 12, fontWeight: "600", letterSpacing: 1.1, textTransform: "uppercase" },
   primaryButton: { minHeight: 54, borderRadius: radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, flexDirection: "row", gap: 9 },
-  primaryButtonText: { fontSize: 15, fontWeight: "700", letterSpacing: 0.1 },
-  quietButton: { minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
-  sectionHeader: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sectionTitle: { fontSize: 19, fontWeight: "700", letterSpacing: -0.35 },
-  sectionAction: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 },
+  primaryButtonText: { flexShrink: 1, fontSize: 15, fontWeight: "600", textAlign: "center" },
+  quietButton: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
+  sectionHeader: { minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: "600", letterSpacing: -0.25, flexShrink: 1 },
+  sectionAction: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 4 },
   sectionActionText: { fontSize: 13, fontWeight: "700" },
   emptyCard: { borderWidth: 1, borderRadius: radius.lg, padding: 24, alignItems: "center" },
   emptyEmbedded: { paddingHorizontal: 24, paddingVertical: 30, alignItems: "center" },
