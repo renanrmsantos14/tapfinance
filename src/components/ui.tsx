@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowRight, Inbox } from "lucide-react-native";
 import { radius, useAppColors } from "../theme";
@@ -19,9 +19,16 @@ export function Label({ children }: { children: ReactNode }) {
 export function useReducedMotion(): boolean | null {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setEnabled);
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setEnabled);
-    return () => subscription.remove();
+    let mounted = true;
+    let changed = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (mounted && !changed) setEnabled(value);
+    }).catch(() => { if (mounted && !changed) setEnabled(true); });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", (value) => {
+      changed = true;
+      if (mounted) setEnabled(value);
+    });
+    return () => { mounted = false; subscription.remove(); };
   }, []);
   return enabled;
 }
@@ -58,20 +65,9 @@ export function QuietButton({ children, onPress, style, accessibilityLabel }: { 
   );
 }
 
-export function Reveal({ children, delay = 0, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(8)).current;
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (reduceMotion === null) return;
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: reduceMotion ? 160 : 220, delay, easing: Easing.bezier(0.23, 1, 0.32, 1), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: reduceMotion ? 0 : 220, delay, easing: Easing.bezier(0.23, 1, 0.32, 1), useNativeDriver: true }),
-    ]).start();
-  }, [delay, opacity, reduceMotion, translateY]);
-
-  return <Animated.View style={[style, { opacity, transform: [{ translateY }] }]}>{children}</Animated.View>;
+export function Reveal({ children, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
+  // Financial data stays visible immediately, without decorative entrance delays.
+  return <View style={style}>{children}</View>;
 }
 
 export function SectionHeader({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {

@@ -34,7 +34,7 @@ export default function InsightsScreen() {
     <Text style={[styles.title, { color: colors.text }]}>Relatórios</Text>
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
       <Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => changeMonth(-1)} style={({ pressed }) => ({ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}><ChevronLeft size={21} color={colors.text} /></Pressable>
-      <Text style={{ color: colors.text, fontWeight: "700", flex: 1, textAlign: "center" }}>{formatMonthLabel(month.getTime())}</Text>
+      <Text style={{ color: colors.text, fontWeight: "700", flex: 1, textAlign: "center" }}>{formatMonthLabel(month.getTime(), true)}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => changeMonth(1)} style={({ pressed }) => ({ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1 })}><ChevronRight size={21} color={colors.text} /></Pressable>
     </View>
     {loading ? <View accessibilityLiveRegion="polite"><Text style={{ color: colors.textMuted }}>Carregando relatório…</Text><SkeletonRows count={5} /></View> : error ? <EmptyState title="Relatório indisponível" description={error} actionLabel="Tentar novamente" onAction={() => void load()} /> : snapshot && <>

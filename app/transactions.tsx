@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ChevronLeft, ChevronRight, Plus, Search, SlidersHorizontal } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -6,9 +6,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
 import { EmptyState, Reveal, Screen, SkeletonRows } from "../src/components/ui";
-import { listTransactions } from "../src/repositories/transactionRepository";
-import { listAccounts, materializeScheduledTransactions } from "../src/repositories/financeRepository";
-import { listCategories } from "../src/repositories/categoryRepository";
+import { loadHistorySnapshot } from "../src/services/historyService";
 import type { Transaction } from "../src/types/transaction";
 import type { Category, TransactionType } from "../src/types/category";
 import type { Account } from "../src/types/finance";
@@ -37,24 +35,29 @@ export default function TransactionsScreen() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const focused = useRef(false);
+  const sequence = useRef(0);
 
   const load = useCallback(async () => {
+    if (!focused.current) return;
+    const request = ++sequence.current;
+    const current = () => focused.current && sequence.current === request;
     setLoading(true);
     setLoadError(false);
     try {
-      await materializeScheduledTransactions(db);
-      const [transactions, activeAccounts, expenses, incomes] = await Promise.all([
-        listTransactions(db), listAccounts(db), listCategories(db, "expense"), listCategories(db, "income"),
-      ]);
-      setItems(transactions); setAccounts(activeAccounts); setCategories([...expenses, ...incomes]);
+      const snapshot = await loadHistorySnapshot(db);
+      if (current()) { setItems(snapshot.items); setAccounts(snapshot.accounts); setCategories(snapshot.categories); }
     } catch {
-      setLoadError(true);
+      if (current()) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   }, [db]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    focused.current = true; void load();
+    return () => { focused.current = false; sequence.current++; };
+  }, [load]));
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const tagOptions = useMemo(() => getTransactionTagOptions(items, tag), [items, tag]);
   const filteredItems = useMemo(() => filterTransactions(items, { month, type: filter, query, accountId, categoryId, status, kind, tag }), [items, month, filter, query, accountId, categoryId, status, kind, tag]);
@@ -62,7 +65,7 @@ export default function TransactionsScreen() {
   function resetFilters() { setFilter("all"); setQuery(""); setAccountId(null); setCategoryId(null); setStatus("all"); setKind("all"); setTag(null); }
   const totals = useMemo(() => {
     try {
-      const currencies = accounts.filter((account) => !accountId || account.id === accountId).map((account) => account.currency);
+      const currencies = accounts.filter((account) => accountId ? account.id === accountId : !account.isArchived).map((account) => account.currency);
       return { summaries: summarizeTransactionsByCurrency(filteredItems, currencies), error: null };
     } catch (error) {
       return { summaries: [], error: error instanceof Error ? error.message : "Totais indisponíveis." };
@@ -77,7 +80,7 @@ export default function TransactionsScreen() {
             <View>
               <Text style={[styles.eyebrow, { color: colors.accent }]}>MOVIMENTAÇÕES</Text>
               <Text style={[styles.title, { color: colors.text }]}>Transações</Text>
-              <Text style={[styles.subtitle, { color: colors.textMuted }]}>{loading ? "Atualizando…" : `${filteredItems.length} neste período`}</Text>
+              <Text style={[styles.subtitle, { color: colors.textMuted }]}>{loading ? "Atualizando…" : loadError ? "Histórico indisponível" : `${filteredItems.length} neste período`}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Novo lançamento" onPress={() => router.push("/quick-entry")} style={[styles.add, { backgroundColor: colors.text }]}>
               <Plus color={colors.background} size={20} strokeWidth={2.5} />
@@ -85,9 +88,9 @@ export default function TransactionsScreen() {
           </Reveal>
 
           <View style={[styles.monthPicker, { backgroundColor: colors.surface }]}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} style={styles.monthArrow}><ChevronLeft color={colors.textMuted} size={21} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" onPress={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} style={({ pressed }) => [styles.monthArrow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}><ChevronLeft color={colors.textMuted} size={21} /></Pressable>
             <Text style={[styles.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} style={styles.monthArrow}><ChevronRight color={colors.textMuted} size={21} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" onPress={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} style={({ pressed }) => [styles.monthArrow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}><ChevronRight color={colors.textMuted} size={21} /></Pressable>
           </View>
 
           <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><Search color={colors.textMuted} size={17} /><TextInput accessibilityLabel="Buscar transações" placeholder="Buscar transações" placeholderTextColor={colors.textMuted} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: colors.text }]} returnKeyType="search" /></View>
@@ -166,7 +169,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, marginTop: 5 },
   add: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   monthPicker: { minHeight: 48, borderRadius: radius.md, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  monthArrow: { width: 42, height: 42, alignItems: "center", justifyContent: "center" }, monthLabel: { fontSize: 15, fontWeight: "700", textTransform: "capitalize" },
+  monthArrow: { width: 48, height: 48, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" }, monthLabel: { flex: 1, textAlign: "center", fontSize: 15, fontWeight: "700", textTransform: "capitalize" },
   search: { minHeight: 48, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }, searchInput: { flex: 1, height: 46, fontSize: 14 },
   summary: { borderWidth: 1, borderRadius: radius.lg, paddingVertical: 16, paddingHorizontal: 13, marginBottom: 14, flexDirection: "row", justifyContent: "space-between", gap: 6 },
   summaryItem: { flex: 1 }, summaryLabel: { fontSize: 10, marginBottom: 7 },

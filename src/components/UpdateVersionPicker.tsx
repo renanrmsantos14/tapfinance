@@ -1,6 +1,6 @@
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Check, X } from "lucide-react-native";
-import { PrimaryButton } from "./ui";
+import { PrimaryButton, useReducedMotion } from "./ui";
 import { radius, useAppColors } from "../theme";
 import type { Update } from "../services/updateService";
 
@@ -12,9 +12,10 @@ type Props = {
 
 export function UpdateVersionPicker(props: Props) {
   const colors = useAppColors();
+  const reduceMotion = useReducedMotion();
   const selected = props.updates.find((item) => item.version === props.selectedVersion);
   const busy = props.checking || props.downloading;
-  return <Modal visible={props.visible} transparent animationType="fade" onRequestClose={() => { if (!props.downloading) props.onClose(); }}>
+  return <Modal visible={props.visible} transparent animationType={reduceMotion === false ? "fade" : "none"} onRequestClose={() => { if (!props.downloading) props.onClose(); }}>
     <View style={styles.overlay}><View accessibilityViewIsModal style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border }]}>
       <View style={styles.header}><View style={{ flex: 1 }}><Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Atualizações disponíveis</Text><Text style={{ color: colors.textMuted, marginTop: 4 }}>Instalada: {props.installedVersion}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Fechar atualizações" accessibilityState={{ disabled: props.downloading }} disabled={props.downloading} onPress={props.onClose} style={({ pressed }) => [styles.quiet, { opacity: props.downloading ? 0.4 : pressed ? 0.7 : 1 }]}><X size={21} color={colors.text} /></Pressable></View>
       <ScrollView contentContainerStyle={styles.content}>
