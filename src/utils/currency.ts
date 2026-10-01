@@ -17,6 +17,13 @@ export function formatCentsToBRL(cents: number): string {
   return `${sign}R$ ${whole},${decimal}`;
 }
 
-export function formatInputCents(cents: number): string {
-  return formatCentsToBRL(cents);
+export function formatCentsByCurrency(cents: number, currency = "BRL"): string {
+  const code = currency.trim().toUpperCase();
+  const amount = formatCentsToBRL(cents);
+  if (code === "BRL") return amount;
+  return amount.replace("R$ ", /^[A-Z]{3}$/.test(code) ? `${code} ` : "Moeda desconhecida · ");
+}
+
+export function formatInputCents(cents: number, currency = "BRL"): string {
+  return formatCentsByCurrency(cents, currency);
 }

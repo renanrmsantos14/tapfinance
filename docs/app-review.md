@@ -257,3 +257,205 @@ Não faz parte do APK beta.4 publicado. Revisão integral permanece aberta.
 
 - Dois testes reproduziram `Formato de versão inválido.` antes da correção. Após o patch, 124 testes, TypeScript e exportação Android passaram (3.329 módulos, Hermes). APK final recompilado em 1m33s, assinatura v2 válida, versão beta.5/code 19 e quatro ABIs; o primeiro build anterior ao patch não é o artefato de entrega. Hash e tamanho estão nas notas da release.
 - Endpoint da consulta e validação do digest não mudam; instalação de pré-releases continua manual. Ferramentas de grafo da skill `review-delta` não estão disponíveis nesta sessão; revisão foi feita por diff e busca direta dos consumidores, sem alegar execução de grafo.
+
+### Lote local após beta.5 — integridade do saldo inicial de contas
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Repositório aceita centavos fracionários ou inseguros na criação/edição | Valida inteiro seguro antes de qualquer SQL | Impedir perda de precisão e saldo inconsistente mesmo fora do formulário |
+| NaN gera erro técnico do SQLite | Erro específico orienta corrigir o saldo inicial | Preservar o cadastro original e informar a causa |
+
+- Dois testes reproduziram gravação indevida de centavos fracionários antes do patch; três testes novos usam SQLite real para rejeição sem alterações, preservação do original, valores negativos/zero e limites seguros.
+- 127 testes e TypeScript aprovados. Sem alteração de esquema, moeda, UI ou registros existentes; valores históricos inválidos não são corrigidos automaticamente.
+- Lote exclusivamente local: não incluído no APK/release beta.5 já publicado. A revisão de moeda, tipo de conta, concorrência da conta principal e apresentação monetária segue pendente. QA nativo continua sem prova.
+
+### Lote local após beta.5 — troca da conta principal
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Transação compartilhada pode receber consultas de outras ações | Consultas executam no objeto da transação exclusiva | Isolar validação e troca dos indicadores |
+| Duas chamadas simultâneas disputam a transação | Fila por conexão, inclusive após uma falha | Evitar sobreposição sem engolir erros do chamador |
+| Todos os cadastros recebem novo timestamp | Apenas a principal anterior e o destino são atualizados | Preservar alterações de cadastros não envolvidos |
+
+- Falha concorrente reproduzida antes do patch. Testes em SQLite real confirmam uma principal ativa, saldos preservados, rollback após falha forçada, rejeição de destino ausente e recuperação da fila após falhas. Instrumentação confirma que duas chamadas não entram simultaneamente na API nativa; não depende apenas da fila do adaptador de testes.
+- 129 testes e TypeScript aprovados. API exclusiva verificada na documentação Expo SDK 57; não se presume que ela serialize automaticamente chamadas concorrentes. Escritas de outros fluxos ainda podem produzir erro de bloqueio e devem ser tratadas pelo formulário.
+- Exclusivamente local, sem novo APK/publicação. Concorrência de criação de contas, moeda/tipo e QA de troca real no dispositivo seguem pendentes; o item de troca da principal da lista anterior foi tratado neste lote.
+
+### Lote local após beta.5 — carregamento de cadastros
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Tela atualiza itens antes de concluir contas/categorias | Serviço entrega o conjunto somente após todas as leituras | Não publicar estado parcialmente carregado |
+| Resposta antiga pode encerrar loading ou sobrescrever outra consulta | Sequência por carregamento e invalidação ao perder foco | Preservar a resposta mais recente |
+| Contas/categorias ativas são consultadas novamente | Listas ativas derivam da leitura completa já realizada | Remover consultas repetidas sem perder arquivados |
+| Adicionar permanece acionável com seletores ainda indisponíveis | Desabilitado durante carga/erro/gravação, com indicação acessível e feedback | Evitar formulário com escolhas antigas ou incompletas |
+
+- Três testes em SQLite real verificam arquivados na lista, exclusão dos seletores ativos, três consultas para contas, rejeição integral diante de falha e nova tentativa; verificam também rotas de metas, empréstimos e recorrências vazias. Não equivalem a testes renderizados de corrida de foco.
+- 132 testes e TypeScript aprovados, diff sem erros. Código reutiliza a sequência já existente no editor de lançamentos; nenhum framework novo. O conjunto retornado é completo para publicação em estado React, não uma garantia de snapshot transacional simultâneo entre consultas.
+- Lote local, fora da beta.5 publicada. Cliques, foco, troca rápida de rota, erro/retry e acessibilidade no dispositivo ainda precisam de QA nativo.
+
+### Pedido específico — seletor de versões, incluindo betas
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Consulta somente `/releases/latest`, excluindo betas | Consulta catálogo paginado de releases publicadas | Oferecer também pré-releases |
+| Baixa imediatamente a versão encontrada | Modal com escolhas, canal, tamanho e notas; botão Baixar confirma a selecionada | Usuário escolhe a versão, sem download automático |
+| Apenas compara com a release estável | Ordenação semântica de todas as versões elegíveis | Beta.10 vem depois de beta.9; bloquear downgrade |
+| Falha encerra sem preservar seleção | Falha de download fica no seletor, permitindo repetir ou escolher outra versão | Não perder a escolha nem baixar duplicado |
+
+- Somente versões mais novas, publicadas, com `app-release.apk`, origem exata deste repositório, tamanho compatível com instalador (até 200 MB) e SHA-256 válido entram na lista. Rascunhos, identidade malformada e APK incompleto/sem digest ficam fora. Versão instalada e anteriores não são oferecidas; downgrade pode quebrar o esquema SQLite.
+- Consulta paginada (100 por página, até 20 páginas com erro explícito se exceder); timeout cobre fetch e leitura do corpo. Falha numa página rejeita o catálogo inteiro. Fechar consulta invalida respostas tardias; refs impedem download duplicado. Download mantém seleção e usa o instalador nativo existente, que verifica o hash e pede confirmação ao Android.
+- 135 testes, TypeScript e exportação Android aprovados (3.331 módulos, Hermes). Três testes novos cobrem seleção/ordenação, origem/digest/draft, paginação e falhas HTTP. Catálogo real obtido pelo GitHub CLI confirma beta.5 e beta.4 como opções para uma instalação beta.3; fetch direto pelo Node retornou `fetch failed`, portanto não é prova de rede no Android.
+- Sem dispositivo/emulador: modal, toque/foco/acessibilidade, download e instalação efetiva ainda não testados nativamente. Lote local, não presente na beta.5 publicada. Para habilitar este seletor no aparelho, será necessária uma instalação inicial do próximo APK; depois ele oferecerá releases novas estáveis e betas.
+- Contrato das próximas releases: incrementar versão semântica (incluindo identificador beta), incrementar `android.versionCode`, publicar APK universal como `app-release.apk` e verificar digest no GitHub antes de publicar a release. Beta não precisa virar Latest para aparecer no seletor.
+
+### Lote local após beta.5 — data e hora dos lançamentos
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Cadastro manual grava somente o horário atual, sem escolha | Campos DD/MM/AAAA e HH:mm com ação Usar data e hora atuais | Registrar lançamentos em outra data/hora explicitamente |
+| Editor permite mudar só o dia | Componente compartilhado permite ajustar dia e horário | Completar o timestamp editável sem alterar outros dados |
+| Teclado numérico não oferece os separadores exigidos | Campos permitem digitar barra e dois-pontos; formato e rótulo acessível explícitos | Evitar controle impossível de preencher |
+
+- Cadastro manual não alterado usa Date.now ao salvar; sugestões bancárias mantêm o timestamp original. Campos alterados usam data/hora escolhidas, sem descartar rascunho inválido. Edição sem mudança preserva segundos e milissegundos; mudança apenas de dia mantém esses valores, mudança de hora/minuto os zera. Horário inexistente por transição de fuso é rejeitado, não normalizado silenciosamente.
+- Quatro testes cobrem preservação, meia-noite/23:59, valores inválidos e persistência SQLite real na criação/edição. 139 testes e TypeScript aprovados. Usa horário local do aparelho, mantendo o contrato atual, não uma conversão implícita para outro fuso.
+- Local, fora da beta.5 publicada. São campos textuais, não calendário/picker nativo; teclado, foco, retorno de erro e escalabilidade visual ainda sem QA no dispositivo. Objetivo integral permanece aberto.
+
+### Lote local após beta.5 — filtro exato por tag
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Tags só são encontradas na busca textual parcial | Seletor de tag exata e opção Sem tags | Não confundir Viagem com Viagem executiva ou palavra na descrição |
+| Não há indicação/limpeza de filtro por tag | Participa do indicador de filtros ativos e Zerar filtros | Mostrar e desfazer o recorte aplicado |
+| Tags equivalentes podem virar opções repetidas | Normalização Unicode/espaços/caixa, preservando rótulo e seleção | Agrupar sem alterar metadados históricos |
+
+- Duas falhas reproduzidas antes do patch. Dois testes novos cobrem correspondência exata, combinação com busca/situação/natureza, sem tags, Unicode, deduplicação e preservação de seleção que desapareceu do histórico. O seletor usa tags dos lançamentos carregados, não inventa um catálogo independente.
+- 141 testes e TypeScript aprovados. Lista e totais compartilham `filteredItems`; regra existente dos totais permanece restrita a lançamentos comuns pagos, excluindo transferências/correções/pendências. Opções novas têm alvo mínimo de 44 e feedback ao pressionar.
+- Lote local, não incluído na beta.5. Renderização, seleção/limpeza real por toque/foco e comportamento com fonte ampliada ainda sem QA no dispositivo; filtros de várias tags simultâneas não foram implementados neste lote.
+
+### Lote local após beta.5 — criar lançamentos pendentes
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Cadastro rápido omite situação e sempre grava pago | Seletor explícito Pago/A pagar ou Recebido/A receber | Planejar pendências sem alterar saldo realizado |
+| Editor e cadastro têm controles distintos | Componente compartilhado com explicação do efeito no saldo | Mesma linguagem e alvos mínimos de 44 |
+| Receita é exibida genericamente como paga | Rótulo Recebido, sem mudar o status técnico paid | Tornar a direção financeira clara |
+
+- Repositório já suportava pending; testes de base passaram antes da alteração da UI. Dois testes SQLite reais verificam receitas/despesas pendentes, confirmação, reversão para pendente, totais realizados, metadados e identidade sem duplicação. Não se afirma que a regra contábil estava quebrada; faltava acesso no cadastro.
+- 143 testes passaram; TypeScript aprovado após tratamento do retorno opcional do resumo nos testes. Desembolso inicial continua com situação bloqueada no editor. Sugestões bancárias iniciam confirmadas como antes, mas a situação é revisável pelo usuário. A data não altera a situação automaticamente.
+- Local, fora da beta.5 publicada. Confirmação real, labels de leitor de tela, fonte ampliada e feedback ainda precisam de QA nativo. Objetivo integral continua aberto.
+
+### Lote local após beta.5 — criação concorrente e posição de contas
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Consulta e inserção separadas podem criar duas principais | Transação exclusiva, enfileirada por conexão junto à troca da principal | Escolher a primeira conta do catálogo ativo sem disputa |
+| Posição usa quantidade de contas ativas | Nova posição vem após a maior posição armazenada, incluindo arquivadas | Não reutilizar posição após arquivamento |
+| Criar dentro da importação poderia abrir transação aninhada | Variante explícita para a transação exclusiva já aberta pelo CSV | Preservar rollback do arquivo inteiro |
+
+- Dois testes reproduziram principal dupla e posição repetida antes do patch. Três testes SQLite reais verificam principal única, posições distintas, preservação de cadastros, fila antes da API nativa e recuperação após inserção abortada por trigger. Testes de CSV/rollback e troca da principal continuam aprovados.
+- Suíte e TypeScript aprovados; nenhuma migração ou reordenação de registros existentes. Não corrige automaticamente duplicidades históricas nem cobre coordenação entre conexões diferentes; falhas de bloqueio continuam explícitas ao chamador.
+- Lote local, fora da beta.5. Concorrência nativa/dispositivo, revisão de tipo/moeda e restante da revisão integral continuam pendentes.
+
+### Lote local após beta.5 — estados da visão geral
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Cartões exibem zeros iniciais mesmo antes da consulta/falha | Carga e falha ficam separadas do conteúdo financeiro | Não apresentar ausência de prova como saldo consultado |
+| Uma resposta antiga pode sobrescrever recarga mais recente | Sequência de consultas e invalidação ao sair da tela | Manter somente resultado válido da última carga |
+| Próximos itens dependem de inverter o fim da lista | Ordenação explícita das três pendências comuns mais próximas | Clareza e exclusão de correções/transferências legadas pendentes |
+
+- Serviço reúne consultas para publicar o conjunto completo em React; não promete snapshot SQL simultâneo entre leituras. Dois testes SQLite reais verificam limites do mês local, recentes, próximas pendências, exclusão de pagos futuros da lista de próximos e rejeição/retry de uma consulta parcial.
+- 148 testes e TypeScript aprovados. Totais mantêm o contrato existente: lançamentos comuns pagos no mês, inclusive um lançamento futuro explicitamente marcado pago; contas têm saldo acumulado, não saldo mensal. Não há seletor de mês na home ainda; histórico já tem navegação de mês.
+- Lote local, fora da beta.5 publicada. Corrida de foco/renderização, pull-to-refresh, fonte ampliada e anúncios acessíveis aguardam QA nativo. A navegação ao perder foco e outras consultas simultâneas não foram comprovadas no Android.
+- Exportação Android final deste lote aprovada: 3.334 módulos, bundle Hermes `entry-5d8e8c6b3903c9194ed651f0c062f7d4.hbc`. Inclui as mudanças locais acumuladas, mas não é um novo APK publicado nem prova de uso no dispositivo.
+
+### Lote local após beta.5 — moeda dos valores individuais
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Saldos USD/EUR aparecem com símbolo R$ | Formatação usa código da moeda da conta | Não rotular outra unidade financeira como reais |
+| Consulta de lançamento omite moeda | Join retorna accountCurrency, sem coluna/migração nova | Propagar a unidade original até histórico/editor |
+| Entradas e confirmações individuais assumem BRL | Conta, histórico, criação/edição, transferência e correção mostram a unidade da conta | Usuário revisa o valor na unidade correta |
+
+- Dois testes reproduziram ausência de formatação por moeda e falta da moeda no lançamento consultado. Testes cobrem zero/negativo, BRL/USD/EUR, código malformado sem fallback enganoso para R$, e SQLite preservando centavos e moeda original. 150 testes passaram; TypeScript aprovado.
+- Formatação mantém duas casas e armazenamento em centavos; outras moedas usam código, não símbolo ambíguo. Valida formato do código, não catálogo ISO ou quantidade de casas de cada moeda. Não converte valores nem altera dados; mudar a conta não calcula câmbio.
+- Limitação financeira importante: totais agregados do mês, orçamentos/metas, empréstimos, recorrências e eventos de atividade ainda precisam de política consistente por moeda. Esta mudança de valores individuais não prova suporte integral a múltiplas moedas nem autoriza somar BRL/USD como a mesma unidade. Pendência de alta prioridade antes de declarar versão estável.
+- Local, fora da beta.5. Renderização/entrada com moedas longas, leitor de tela e confirmação real de correção/transferência ainda aguardam QA nativo.
+
+### Lote local após beta.5 — totais mensais separados por moeda
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Home e histórico somam centavos BRL/USD/EUR e exibem R$ | Receitas, despesas e saldo têm grupos independentes por moeda | Não somar unidades financeiras diferentes sem câmbio |
+| Histórico exibe totais antes da conclusão da carga ou após falha | Totais só aparecem após consulta bem-sucedida | Não apresentar zero inicial ou dados antigos como saldo confirmado |
+| Soma pode exceder a precisão inteira do JavaScript | Agregação rejeita valores/somas fora do limite seguro | Não exibir arredondamento como valor financeiro exato |
+
+- Home considera lançamentos do mês local, inclusive contas arquivadas com histórico, e mantém moedas das contas ativas mesmo sem movimentos. Histórico calcula por moeda após aplicar os filtros; pendências, transferências e correções não entram nas receitas/despesas realizadas. Grupos com somente esses itens ficam zerados na moeda correta. Sem conversão, migração ou alteração do histórico financeiro.
+- Três testes novos cobrem SQLite com BRL/USD/EUR, conta arquivada, limites de mês, filtro por conta, exclusões e estouro numérico. Os dois testes de carga da home foram adaptados ao contrato explícito por moeda. TypeScript e os 153 testes passaram.
+- A função antiga getMonthSummary não tem consumidores de produção neste lote; permanece para testes legados e ainda não é contrato seguro para múltiplas moedas. Relatórios, calendário, orçamentos, metas e empréstimos ainda exigem revisão consistente; suporte integral a múltiplas moedas não está concluído.
+- Mudanças locais, fora da beta.5 publicada. Layout com vários grupos, fonte ampliada, leitor de tela e interação em dispositivo ainda não foram validados. Não há dispositivo/emulador disponível nesta sessão.
+- Exportação Android deste lote aprovada: 3.335 módulos, Hermes `entry-5a81de4caf47b1f1f722c50dd74ce9fb.hbc`. Não constitui APK instalado, novo release ou validação nativa.
+
+### Lote local após beta.5 — relatórios por moeda e período
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Relatório soma unidades diferentes e percentuais globais | Totais, categorias e percentuais independentes por moeda | Representar a unidade original sem inventar câmbio |
+| Somente o mês da abertura da tela, sem navegação | Botões de mês anterior/próximo | Consultar histórico mensal, não apenas o mês atual |
+| Breakdown descarta categorias após a oitava | Todas as categorias de despesa do período | Não esconder parte do gasto informado no total |
+| Zero inicial e falha sem recuperação | Carga, erro/retry e conteúdo confirmado separados | Evitar números falsamente confirmados e saída sem recuperação |
+
+- Serviço reutiliza a agregação monetária segura, mantém histórico de contas/categorias arquivadas, exclui pendências/transferências/correções e publica o resultado completo somente após ambas as consultas. Não é snapshot SQL transacional entre leituras; consulta o histórico inteiro e filtra o mês em memória, pendente otimização para bases muito grandes.
+- A tela invalida consultas antigas ao trocar o mês ou perder foco; setLoading ocorre no clique de mudança de mês para não exibir o relatório anterior sob o mês novo. Voltar e setas têm feedback e alvo mínimo de 44 px. Percentuais usam o total da própria moeda; arredondamento visual pode somar 99/101%.
+- Três testes SQLite reais cobrem BRL/USD, percentuais 75/25, histórico arquivado, limites de mês, nove categorias sem truncamento, consulta com falha e retry e período inválido. TypeScript e os 156 testes passaram. O primeiro teste de nove categorias teve erro de fixture (coluna inexistente updated_at), corrigido conforme schema real; não foi erro do app.
+- O Intent orientou recuperação visível e separação entre carga e números confirmados. Navegação rápida de meses, foco, fonte ampliada, leitor de tela e layout multimoeda ainda aguardam teste no dispositivo; testes de serviço não comprovam renderização/interação React Native. Local, fora da beta.5 publicada. Calendário, orçamentos/metas e empréstimos ainda precisam de política monetária consistente.
+- Exportação Android deste lote aprovada: 3.336 módulos, Hermes `entry-4317f53f999619cab635a40768363849.hbc`. Nenhum novo APK/release publicado.
+
+### Lote local após beta.5 — calendário selecionável e fluxo por moeda
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Saldo mistura moedas e ponto usa soma diária incluindo pendências | Fluxo realizado por moeda; ponto neutro indica presença de movimentos | Não representar soma de unidades diferentes como saldo ou cor positiva/negativa |
+| Dias somente visuais | Seleção de dia filtra movimentos; ação para ver mês inteiro | Tornar o calendário útil para consulta diária |
+| Falha deixa lista antiga/zerada e mostra apenas alerta | Estado de carga, erro com retry e dados confirmados separados | Não exibir conteúdo anterior sob um mês novo nem zero não consultado |
+
+- Serviço mantém o comportamento existente de materializar recorrências antes da leitura, incluindo projeção de pendências até 45 dias futuros. Depois carrega transações/contas e monta conjunto completo. Histórico arquivado é mantido; fluxo inclui somente lançamentos comuns pagos, não essa projeção pendente. Leitura não é snapshot SQL transacional e ainda consulta todo o histórico em memória.
+- Calendário usa segunda-feira como início e semanas completas, incluindo fevereiro bissexto. Ponto inclui pendências, transferências e correções como presença, não como fluxo. Texto explica a distinção; fluxo permanece mensal ao selecionar dia. Troca de mês limpa seleção e invalida respostas antigas; sair da tela invalida consultas. Dias ficam desabilitados durante carga/falha.
+- Testes novos verificam 35/42 células, ano bissexto, mês inválido, BRL/USD e histórico arquivado, pendência fora do fluxo mas presente no dia, limites locais de dia/mês, dia inválido e consulta com falha/retry. TypeScript e 159 testes aprovados.
+- Setas e retorno têm alvo mínimo de 44 px; células de dia têm 44 px de altura, largura proporcional a sete colunas (não há prova de 44 px em telas estreitas). Feedback de clique, labels de datas/contagens e seleção foram implementados; não são prova de toque, TalkBack, fonte ampliada ou layout no dispositivo. Local, fora da beta.5 publicada. Orçamentos/metas, empréstimos e recorrências ainda exigem revisão monetária integral.
+- Exportação Android aprovada: 3.337 módulos, Hermes `entry-12e566feae376f361d9cf0bf8bb9e050.hbc`. Nenhum novo APK/release publicado neste lote.
+
+### Lote local após beta.5 — moeda explícita nos orçamentos
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Orçamento sem unidade monetária soma BRL/USD como reais | Cada orçamento registra moeda e considera contas dessa moeda | Evitar limites, percentuais e gastos em unidades incompatíveis |
+| Breakdown e limite diário usam R$ independentemente da conta | Lista, home, detalhes e criação usam a moeda do orçamento | Manter unidade do limite, categorias e disponibilidade diária |
+| Backup não verifica campo monetário de orçamento | Schema 6 exige coluna currency; backups 3–5 continuam migráveis | Evitar restaurar arquivo que declara schema novo sem a estrutura correspondente |
+
+- Assumido e comunicado: orçamentos antigos permanecem BRL, a unidade em que já eram exibidos; não há câmbio histórico ou inferência de outra intenção. Migração adiciona apenas a coluna com default BRL e o registro de versão, em transação. Limites por categoria, lançamentos e histórico pago são preservados. A exclusão de gastos de outras moedas do cálculo corrige o cálculo anterior, não apaga movimentos. Usuários que pretendiam outro limite monetário devem criar outro orçamento nessa moeda.
+- Novo orçamento aceita código de três letras, normalizado; a validação cobre formato, não catálogo ISO/minor units. Armazenamento continua com duas casas decimais. Moeda de orçamento existente é imutável tanto na UI quanto no repositório; omissão na edição preserva a unidade armazenada. Home e detalhes formatam gastos/limites corretamente. Agregações do orçamento rejeitam soma fora do limite inteiro seguro.
+- Três testes novos SQLite reproduzem soma BRL/USD indevida e cobrem conta arquivada, pendência excluída, categoria/limite na mesma moeda, moeda inválida, edição sem troca de unidade, migração 5→6 idempotente, preservação de movimentos e limites, backup schema 6 incompleto, falha da migração com rollback da coluna/versão e retry. Fixtures legadas 3/4 foram ajustadas para realmente remover a coluna nova antes do upgrade; não se modificou a regra de empréstimos/recorrências. TypeScript e todos os 162 testes aprovados.
+- Backup schema 6 não é compatível com aplicativos antigos que só conhecem schema 5; o app publicado beta.5 não recebe esta mudança até um APK novo. Exportação/compartilhamento/restauração nativa continuam sem prova em dispositivo. Entrada da moeda, edição e layout com valores longos precisam de QA nativo. Mudanças locais; metas e empréstimos ainda exigem moeda/vínculo consistente antes de declarar suporte integral.
+- Exportação Android aprovada: 3.337 módulos, Hermes `entry-52dd50b52d203421f5d0f89cb281a020.hbc`. Sem novo APK/release neste lote.
+
+### Escopo atualizado pelo usuário — foco BRL
+
+- Usuário informou que não precisa de USD por enquanto. Expansão monetária em metas/empréstimos foi interrompida antes de editar esses módulos. Proteções e mudanças já testadas foram preservadas, conforme comunicado; não houve rollback de trabalho existente.
+- Pendências anteriores de suporte integral a múltiplas moedas não são mais critério de conclusão do escopo atual. A revisão continua das funcionalidades e UI para uso em BRL, com publicação e validação nativa ainda distintas de testes locais.
+
+### Lote local após beta.5 — recorrências com atraso superior a 12 parcelas
+
+| Antes | Depois | Motivo |
+| --- | --- | --- |
+| Consulta retorna sucesso após somente 12 ocorrências | Geração cobre todas as ocorrências até o horizonte existente | Não deixar calendário/histórico incompletos sem aviso |
+| Data inválida da consulta pode produzir resultado vazio | Data/horizonte, valores e referência armazenada são validados | Não tratar entrada inválida ou corrupção como geração válida |
+| Avanço de data inválido pode repetir a mesma ocorrência | Próxima data deve ser válida e estritamente posterior | Evitar loop sem avanço e estado incompleto |
+
+- Mantido o horizonte existente de 45 dias futuros, além de todas as parcelas atrasadas. As ocorrências novas permanecem pendentes: geração não liquida despesas, não altera saldo pago nem adivinha pagamentos. Datas mensais continuam ancoradas, inclusive dia 31 e ano bissexto. Registro de instâncias preserva identidade após exclusão; nova consulta não recria parcela removida.
+- Transação continua atômica por recorrência (não por catálogo inteiro): falha na 13ª ocorrência desfaz todas as novas parcelas/instâncias daquela regra e sua próxima data; retry recupera. Outra regra já concluída no catálogo não é revertida. Atualização da próxima data ocorre uma vez ao final, reduzindo escritas redundantes; fila existente continua serializando consultas no mesmo objeto SQLite.
+- Quatro testes novos reproduziram 12 em vez de 38 parcelas mensais/59 semanais e ausência de rejeição. Agora cobrem atraso completo em uma consulta, relógio local, ano bissexto, retry concorrente sem duplicar, histórico pago/exclusão preservados, falha tardia/rollback/retry, data de consulta impossível e centavos armazenados fracionários. Vinte testes específicos, TypeScript e os 166 testes totais passaram.
+- Removido corte silencioso sem impor outro limite arbitrário. Atrasos extremamente grandes ainda podem tornar a consulta demorada no dispositivo; não há benchmark Android ou progresso por parcela. Interface mantém estado de carga enquanto aguarda. Sem nova migração neste lote e sem alterações em moedas/metas/empréstimos. Local, fora da beta.5 publicada.
+- Corrigida uma descrição anterior do calendário neste documento: o código já projetava pendências até 45 dias futuros. Isso não é pagamento realizado e não entra no fluxo mensal pago.
+- Exportação Android aprovada: 3.337 módulos, Hermes `entry-42f7a5ce200ea2da8d3df2e56f8a4e14.hbc`. ADB consultado neste lote sem dispositivo conectado. Nenhum APK/release novo nem benchmark nativo.

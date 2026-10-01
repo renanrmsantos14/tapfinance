@@ -19,6 +19,10 @@ export async function inspectBackupDatabase(database: SQLiteDatabase): Promise<{
     const columns = await database.getAllAsync<{ name: string }>("PRAGMA table_info(loans)");
     if (!columns.some((column) => column.name === "initial_transaction_id")) throw new Error("O backup não contém a estrutura de empréstimos esperada.");
   }
+  if (version.version >= 6) {
+    const columns = await database.getAllAsync<{ name: string }>("PRAGMA table_info(budgets)");
+    if (!columns.some((column) => column.name === "currency")) throw new Error("O backup não contém a estrutura monetária de orçamentos esperada.");
+  }
   const accounts = await database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM accounts");
   const transactions = await database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM transactions");
   return { accounts: accounts?.count ?? 0, transactions: transactions?.count ?? 0, schemaVersion: version.version };

@@ -3,6 +3,13 @@ import { createId } from "../database/ids";
 import type { Account, AccountType, Budget, BudgetCycle, Goal, Loan, Schedule } from "../types/finance";
 import { budgetPeriod } from "../utils/budgetPeriods";
 
+const accountChanges = new WeakMap<SQLiteDatabase, Promise<unknown>>();
+function queueAccountChange<T>(db: SQLiteDatabase, action: () => Promise<T>): Promise<T> {
+  const change = (accountChanges.get(db) ?? Promise.resolve()).catch(() => undefined).then(action);
+  accountChanges.set(db, change);
+  return change;
+}
+
 export async function listAccounts(db: SQLiteDatabase, includeArchived = false): Promise<Account[]> {
   const rows = await db.getAllAsync<{
     id: string; name: string; type: AccountType; currency: string; color: string;
@@ -30,21 +37,36 @@ export async function listAccounts(db: SQLiteDatabase, includeArchived = false):
   }));
 }
 
-export async function createAccount(db: SQLiteDatabase, input: { name: string; type: AccountType; currency?: string; color: string; openingBalanceCents?: number }): Promise<string> {
+type AccountInput = { name: string; type: AccountType; currency?: string; color: string; openingBalanceCents?: number };
+
+export function createAccount(db: SQLiteDatabase, input: AccountInput): Promise<string> {
+  return queueAccountChange(db, async () => {
+    let id = "";
+    await db.withExclusiveTransactionAsync(async (tx) => { id = await createAccountInTransaction(tx, input); });
+    return id;
+  });
+}
+
+// For callers that already own an exclusive transaction, such as CSV import.
+export async function createAccountInTransaction(db: SQLiteDatabase, input: AccountInput): Promise<string> {
   if (!input.name.trim()) throw new Error("Informe o nome da conta.");
+  if (!Number.isSafeInteger(input.openingBalanceCents ?? 0)) throw new Error("Informe um saldo inicial válido em centavos inteiros, dentro do limite seguro.");
   const id = createId(); const now = Date.now();
-  const count = await db.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM accounts WHERE is_archived = 0");
+  const catalog = await db.getFirstAsync<{ position: number; active_count: number }>("SELECT COALESCE(MAX(position), -1) AS position, COALESCE(SUM(CASE WHEN is_archived = 0 THEN 1 ELSE 0 END), 0) AS active_count FROM accounts");
+  const position = (catalog?.position ?? -1) + 1;
+  if (!Number.isSafeInteger(position) || position < 0) throw new Error("A ordenação das contas está fora do limite seguro. Revise o cadastro antes de adicionar outra conta.");
   await db.runAsync(
     `INSERT INTO accounts (id, name, type, currency, color, opening_balance_cents, position, is_primary, is_archived, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     id, input.name.trim(), input.type, input.currency ?? "BRL", input.color,
-    input.openingBalanceCents ?? 0, count?.count ?? 0, (count?.count ?? 0) === 0 ? 1 : 0, now, now,
+    input.openingBalanceCents ?? 0, position, (catalog?.active_count ?? 0) === 0 ? 1 : 0, now, now,
   );
   return id;
 }
 
 export async function updateAccount(db: SQLiteDatabase, id: string, input: { name: string; type: AccountType; color: string; openingBalanceCents: number }): Promise<void> {
   if (!input.name.trim()) throw new Error("Informe o nome da conta.");
+  if (!Number.isSafeInteger(input.openingBalanceCents)) throw new Error("Informe um saldo inicial válido em centavos inteiros, dentro do limite seguro.");
   const result = await db.runAsync(
     "UPDATE accounts SET name = ?, type = ?, color = ?, opening_balance_cents = ?, updated_at = ? WHERE id = ? AND is_archived = 0",
     input.name.trim(), input.type, input.color, input.openingBalanceCents, Date.now(), id,
@@ -99,13 +121,14 @@ export async function correctAccountBalance(db: SQLiteDatabase, input: { account
   return id;
 }
 
-export async function setPrimaryAccount(db: SQLiteDatabase, accountId: string): Promise<void> {
-  await db.withTransactionAsync(async () => {
-    const account = await db.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", accountId);
+export function setPrimaryAccount(db: SQLiteDatabase, accountId: string): Promise<void> {
+  return queueAccountChange(db, () => db.withExclusiveTransactionAsync(async (tx) => {
+    const account = await tx.getFirstAsync<{ id: string }>("SELECT id FROM accounts WHERE id = ? AND is_archived = 0", accountId);
     if (!account) throw new Error("Conta não encontrada ou arquivada.");
-    await db.runAsync("UPDATE accounts SET is_primary = 0, updated_at = ?", Date.now());
-    await db.runAsync("UPDATE accounts SET is_primary = 1, updated_at = ? WHERE id = ? AND is_archived = 0", Date.now(), accountId);
-  });
+    const now = Date.now();
+    await tx.runAsync("UPDATE accounts SET is_primary = 0, updated_at = ? WHERE is_primary = 1", now);
+    await tx.runAsync("UPDATE accounts SET is_primary = 1, updated_at = ? WHERE id = ? AND is_archived = 0", now, accountId);
+  }));
 }
 
 export async function createTransfer(db: SQLiteDatabase, input: { fromAccountId: string; toAccountId: string; amountCents: number; occurredAt: number; title?: string }): Promise<string> {
@@ -135,32 +158,34 @@ export async function createTransfer(db: SQLiteDatabase, input: { fromAccountId:
 }
 
 export async function listBudgets(db: SQLiteDatabase): Promise<Budget[]> {
-  const rows = await db.getAllAsync<{ id: string; name: string; amount_cents: number; color: string; cycle: BudgetCycle; start_at: number; end_at: number | null; is_archived: number }>(
-    "SELECT id, name, amount_cents, color, cycle, start_at, end_at, is_archived FROM budgets WHERE is_archived = 0 ORDER BY created_at",
+  const rows = await db.getAllAsync<{ id: string; name: string; currency: string; amount_cents: number; color: string; cycle: BudgetCycle; start_at: number; end_at: number | null; is_archived: number }>(
+    "SELECT id, name, currency, amount_cents, color, cycle, start_at, end_at, is_archived FROM budgets WHERE is_archived = 0 ORDER BY created_at",
   );
   return Promise.all(rows.map(async (row) => {
     const period = budgetPeriod(row.cycle, row.start_at, row.end_at);
     const total = await db.getFirstAsync<{ spent: number }>(
-      `SELECT COALESCE(SUM(t.amount_cents), 0) AS spent FROM transactions t
+      `SELECT COALESCE(SUM(t.amount_cents), 0) AS spent FROM transactions t JOIN accounts a ON a.id = t.account_id
        WHERE t.type = 'expense' AND t.kind = 'standard' AND t.status = 'paid'
+       AND UPPER(TRIM(a.currency)) = ?
        AND t.occurred_at >= ? AND t.occurred_at < ?
        AND (NOT EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ?)
          OR EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ? AND bc.category_id = t.category_id))`,
-      period.start, period.end, row.id, row.id,
+      row.currency, period.start, period.end, row.id, row.id,
     );
-    return { id: row.id, name: row.name, amountCents: row.amount_cents, spentCents: total?.spent ?? 0, color: row.color, cycle: row.cycle, startAt: period.start, endAt: period.end, isArchived: row.is_archived === 1 };
+    if (!Number.isSafeInteger(total?.spent ?? 0)) throw new Error("Total do orçamento fora do limite numérico.");
+    return { id: row.id, name: row.name, currency: row.currency, amountCents: row.amount_cents, spentCents: total?.spent ?? 0, color: row.color, cycle: row.cycle, startAt: period.start, endAt: period.end, isArchived: row.is_archived === 1 };
   }));
 }
 
-export async function createBudget(db: SQLiteDatabase, input: { name: string; amountCents: number; color: string; cycle: BudgetCycle; startAt?: number; endAt?: number | null; categoryIds?: string[]; categoryLimits?: { categoryId: string; limitCents: number | null }[] }): Promise<string> {
+export async function createBudget(db: SQLiteDatabase, input: { name: string; currency?: string; amountCents: number; color: string; cycle: BudgetCycle; startAt?: number; endAt?: number | null; categoryIds?: string[]; categoryLimits?: { categoryId: string; limitCents: number | null }[] }): Promise<string> {
   const id = createId(); const now = Date.now();
   const configuration = { ...input, startAt: input.startAt ?? now, endAt: input.endAt ?? null, categoryLimits: input.categoryLimits ?? input.categoryIds?.map((categoryId) => ({ categoryId, limitCents: null })) ?? [] };
   validateBudgetConfiguration(configuration);
   await db.withExclusiveTransactionAsync(async (tx) => {
     await validateBudgetCategories(tx, configuration.categoryLimits);
     await tx.runAsync(
-      "INSERT INTO budgets (id, name, amount_cents, color, cycle, start_at, end_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, input.name.trim(), input.amountCents, input.color, input.cycle, configuration.startAt, configuration.endAt, now, now,
+      "INSERT INTO budgets (id, name, currency, amount_cents, color, cycle, start_at, end_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id, input.name.trim(), (input.currency ?? "BRL").trim().toUpperCase(), input.amountCents, input.color, input.cycle, configuration.startAt, configuration.endAt, now, now,
     );
     for (const category of configuration.categoryLimits) {
       await tx.runAsync("INSERT INTO budget_categories (budget_id, category_id, limit_cents) VALUES (?, ?, ?)", id, category.categoryId, category.limitCents);
@@ -171,10 +196,12 @@ export async function createBudget(db: SQLiteDatabase, input: { name: string; am
 
 export type BudgetConfiguration = {
   id: string; name: string; amountCents: number; color: string; cycle: BudgetCycle;
+  currency?: string;
   startAt: number; endAt: number | null; categoryLimits: { categoryId: string; limitCents: number | null }[];
 };
 
 function validateBudgetConfiguration(input: Omit<BudgetConfiguration, "id">): void {
+  if (input.currency !== undefined && !/^[A-Z]{3}$/.test(input.currency.trim().toUpperCase())) throw new Error("Informe um código de moeda com três letras, como BRL ou USD.");
   if (!input.name.trim() || !Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("Informe nome e limite válidos.");
   if (!Number.isSafeInteger(input.startAt) || !Number.isFinite(new Date(input.startAt).getTime())) throw new Error("Data inicial inválida.");
   if (input.endAt !== null && (!Number.isSafeInteger(input.endAt) || !Number.isFinite(new Date(input.endAt).getTime()))) throw new Error("Data final inválida.");
@@ -191,15 +218,15 @@ async function validateBudgetCategories(db: SQLiteDatabase, limits: BudgetConfig
 }
 
 export async function getBudgetConfiguration(db: SQLiteDatabase, id: string): Promise<BudgetConfiguration | null> {
-  const row = await db.getFirstAsync<{ id: string; name: string; amount_cents: number; color: string; cycle: BudgetCycle; start_at: number; end_at: number | null }>(
-    "SELECT id, name, amount_cents, color, cycle, start_at, end_at FROM budgets WHERE id = ? AND is_archived = 0", id,
+  const row = await db.getFirstAsync<{ id: string; name: string; currency: string; amount_cents: number; color: string; cycle: BudgetCycle; start_at: number; end_at: number | null }>(
+    "SELECT id, name, currency, amount_cents, color, cycle, start_at, end_at FROM budgets WHERE id = ? AND is_archived = 0", id,
   );
   if (!row) return null;
   const categoryLimits = await db.getAllAsync<{ category_id: string; limit_cents: number | null }>(
     "SELECT category_id, limit_cents FROM budget_categories WHERE budget_id = ?", id,
   );
   return {
-    id: row.id, name: row.name, amountCents: row.amount_cents, color: row.color, cycle: row.cycle,
+    id: row.id, name: row.name, currency: row.currency, amountCents: row.amount_cents, color: row.color, cycle: row.cycle,
     startAt: row.start_at, endAt: row.end_at,
     categoryLimits: categoryLimits.map((item) => ({ categoryId: item.category_id, limitCents: item.limit_cents })),
   };
@@ -208,8 +235,9 @@ export async function getBudgetConfiguration(db: SQLiteDatabase, id: string): Pr
 export async function updateBudget(db: SQLiteDatabase, id: string, input: Omit<BudgetConfiguration, "id">): Promise<void> {
   validateBudgetConfiguration(input);
   await db.withExclusiveTransactionAsync(async (tx) => {
-    const existing = await tx.getFirstAsync<{ id: string }>("SELECT id FROM budgets WHERE id = ? AND is_archived = 0", id);
+    const existing = await tx.getFirstAsync<{ id: string; currency: string }>("SELECT id, currency FROM budgets WHERE id = ? AND is_archived = 0", id);
     if (!existing) throw new Error("Orçamento não encontrado.");
+    if (input.currency !== undefined && input.currency.trim().toUpperCase() !== existing.currency) throw new Error("A moeda de um orçamento existente não pode mudar. Crie outro orçamento na moeda desejada.");
     await validateBudgetCategories(tx, input.categoryLimits);
     await tx.runAsync("UPDATE budgets SET name = ?, amount_cents = ?, color = ?, cycle = ?, start_at = ?, end_at = ?, updated_at = ? WHERE id = ?",
       input.name.trim(), input.amountCents, input.color, input.cycle, input.startAt, input.endAt, Date.now(), id);
@@ -233,21 +261,24 @@ export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: s
   const firstPeriod = budgetPeriod(budget.cycle, stored.start_at, stored.end_at, offset + 1);
   const hasPrevious = budget.cycle !== "custom" && firstPeriod.end > stored.start_at;
   const spent = await db.getFirstAsync<{ amountCents: number }>(`
-    SELECT COALESCE(SUM(t.amount_cents), 0) AS amountCents FROM transactions t
+    SELECT COALESCE(SUM(t.amount_cents), 0) AS amountCents FROM transactions t JOIN accounts a ON a.id = t.account_id
     WHERE t.type = 'expense' AND t.kind = 'standard' AND t.status = 'paid'
+      AND UPPER(TRIM(a.currency)) = ?
       AND t.occurred_at >= ? AND t.occurred_at < ?
       AND (NOT EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ?)
         OR EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ? AND bc.category_id = t.category_id))`,
-    period.start, period.end, budgetId, budgetId);
+    budget.currency, period.start, period.end, budgetId, budgetId);
   const categories = await db.getAllAsync<BudgetCategoryBreakdown>(`
     SELECT c.id, c.name, SUM(t.amount_cents) AS amountCents, COUNT(*) AS count, bc.limit_cents AS limitCents
-    FROM transactions t JOIN categories c ON c.id = t.category_id
+    FROM transactions t JOIN categories c ON c.id = t.category_id JOIN accounts a ON a.id = t.account_id
     LEFT JOIN budget_categories bc ON bc.budget_id = ? AND bc.category_id = c.id
     WHERE t.type = 'expense' AND t.kind = 'standard' AND t.status = 'paid'
+      AND UPPER(TRIM(a.currency)) = ?
       AND t.occurred_at >= ? AND t.occurred_at < ?
       AND (NOT EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ?)
         OR EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ? AND bc.category_id = t.category_id))
-    GROUP BY c.id ORDER BY amountCents DESC`, budgetId, period.start, period.end, budgetId, budgetId);
+    GROUP BY c.id ORDER BY amountCents DESC`, budgetId, budget.currency, period.start, period.end, budgetId, budgetId);
+  if (!Number.isSafeInteger(spent?.amountCents ?? 0) || categories.some((item) => !Number.isSafeInteger(item.amountCents))) throw new Error("Total do orçamento fora do limite numérico.");
   const configured = await db.getAllAsync<{ id: string; name: string; limitCents: number | null }>(
     "SELECT c.id, c.name, bc.limit_cents AS limitCents FROM budget_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.budget_id = ? ORDER BY c.position", budgetId,
   );
@@ -477,6 +508,7 @@ export function materializeScheduledTransactions(db: SQLiteDatabase, now = Date.
 
 async function materializeSchedules(db: SQLiteDatabase, now: number): Promise<void> {
   const until = now + 45 * 24 * 60 * 60 * 1000;
+  if (!Number.isSafeInteger(now) || !Number.isFinite(new Date(now).getTime()) || !Number.isSafeInteger(until) || !Number.isFinite(new Date(until).getTime())) throw new Error("Data de consulta das recorrências inválida.");
   const schedules = await db.getAllAsync<{ id: string; title: string; type: "expense" | "income"; amount_cents: number; account_id: string; category_id: string; frequency: Schedule["frequency"]; next_at: number }>(
     "SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at FROM schedules WHERE is_active = 1 AND next_at <= ? ORDER BY next_at",
     until,
@@ -485,10 +517,12 @@ async function materializeSchedules(db: SQLiteDatabase, now: number): Promise<vo
     await db.withExclusiveTransactionAsync(async (tx) => {
       const schedule = await tx.getFirstAsync<typeof candidate>("SELECT id, title, type, amount_cents, account_id, category_id, frequency, next_at FROM schedules WHERE id = ? AND is_active = 1", candidate.id);
       if (!schedule) return;
+      validateSchedule({ title: schedule.title, type: schedule.type, amountCents: schedule.amount_cents, accountId: schedule.account_id, categoryId: schedule.category_id, frequency: schedule.frequency, nextAt: schedule.next_at, isSubscription: false });
       const stored = await tx.getFirstAsync<{ anchor_at: number | null }>("SELECT anchor_at FROM schedules WHERE id = ?", schedule.id);
       const anchor = stored?.anchor_at ?? schedule.next_at;
-      let nextAt = schedule.next_at; let created = 0;
-      while (nextAt <= until && created < 12) {
+      if (!Number.isSafeInteger(anchor) || !Number.isFinite(new Date(anchor).getTime())) throw new Error("Data de referência da recorrência inválida.");
+      let nextAt = schedule.next_at;
+      while (nextAt <= until) {
         const exists = await tx.getFirstAsync<{ transaction_id: string }>("SELECT transaction_id FROM schedule_instances WHERE schedule_id = ? AND scheduled_for = ?", schedule.id, nextAt);
         if (!exists) {
           const transactionId = createId(); const timestamp = Date.now();
@@ -499,14 +533,15 @@ async function materializeSchedules(db: SQLiteDatabase, now: number): Promise<vo
           );
           await tx.runAsync("INSERT INTO schedule_instances (schedule_id, scheduled_for, transaction_id) VALUES (?, ?, ?)", schedule.id, nextAt, transactionId);
         }
-        created += 1;
         if (schedule.frequency === "once") {
           await tx.runAsync("UPDATE schedules SET is_active = 0, updated_at = ? WHERE id = ?", Date.now(), schedule.id);
           break;
         }
-        nextAt = addFrequency(nextAt, schedule.frequency, anchor);
-        await tx.runAsync("UPDATE schedules SET next_at = ?, updated_at = ? WHERE id = ?", nextAt, Date.now(), schedule.id);
+        const following = addFrequency(nextAt, schedule.frequency, anchor);
+        if (!Number.isSafeInteger(following) || !Number.isFinite(new Date(following).getTime()) || following <= nextAt) throw new Error("A data da recorrência não pode avançar. Confira sua frequência e referência.");
+        nextAt = following;
       }
+      if (schedule.frequency !== "once" && nextAt !== schedule.next_at) await tx.runAsync("UPDATE schedules SET next_at = ?, updated_at = ? WHERE id = ?", nextAt, Date.now(), schedule.id);
     });
   }
 }

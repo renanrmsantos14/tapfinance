@@ -17,6 +17,7 @@ export type BudgetCycle = "weekly" | "monthly" | "custom";
 
 export type Budget = {
   id: string;
+  currency: string;
   name: string;
   amountCents: number;
   spentCents: number;

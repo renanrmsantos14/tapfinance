@@ -8,7 +8,7 @@ import { EmptyState, Screen } from "../../src/components/ui";
 import { getBudgetCategoryBreakdown, type BudgetCategoryBreakdown } from "../../src/repositories/financeRepository";
 import type { Budget } from "../../src/types/finance";
 import { radius, useAppColors } from "../../src/theme";
-import { formatCentsToBRL } from "../../src/utils/currency";
+import { formatCentsByCurrency } from "../../src/utils/currency";
 import { formatDate } from "../../src/utils/dates";
 import { dailyBudgetCents } from "../../src/utils/budgetPeriods";
 
@@ -49,6 +49,7 @@ export default function BudgetDetailScreen() {
   if (loadError) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Orçamentos</Text></Pressable><EmptyState title="Não foi possível carregar o período" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /></Screen><BottomNav /></View>;
   if (loading || !budget) return <View style={[styles.root, { backgroundColor: colors.background }]}><Screen><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={{ color: colors.accent }}>‹ Orçamentos</Text></Pressable><Text style={[styles.title, { color: colors.text, marginTop: 22 }]}>{loading ? "Carregando…" : "Orçamento não encontrado"}</Text></Screen><BottomNav /></View>;
   const remaining = budget.amountCents - budget.spentCents;
+  const formatBudgetAmount = (cents: number) => formatCentsByCurrency(cents, budget.currency);
   const progress = budget.spentCents / Math.max(budget.amountCents, 1);
 
   return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
@@ -68,17 +69,17 @@ export default function BudgetDetailScreen() {
         </Svg>
         <View pointerEvents="none" style={styles.chartCenter}><Text style={[styles.chartValue, { color: colors.text }]}>{Math.round(progress * 100)}%</Text><Text style={[styles.chartLabel, { color: colors.textMuted }]}>utilizado</Text></View>
       </View>
-      <Text style={[styles.spent, { color: colors.text }]}>{formatCentsToBRL(budget.spentCents)}</Text>
-      <Text style={[styles.limit, { color: colors.textMuted }]}>de {formatCentsToBRL(budget.amountCents)} disponíveis no período</Text>
+      <Text style={[styles.spent, { color: colors.text }]}>{formatBudgetAmount(budget.spentCents)}</Text>
+      <Text style={[styles.limit, { color: colors.textMuted }]}>de {formatBudgetAmount(budget.amountCents)} disponíveis no período</Text>
       <View style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.progressFill, { width: `${Math.max(0, Math.min(progress * 100, 100))}%`, backgroundColor: remaining < 0 ? colors.negative : budget.color }]} /></View>
-      <Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima do limite em " : "Restam "}{formatCentsToBRL(Math.abs(remaining))}</Text>
-      {periodOffset === 0 && budget.endAt !== null && Date.now() < budget.endAt && Date.now() >= budget.startAt && <Text style={[styles.daily, { color: colors.accent }]}>Disponível por dia: {formatCentsToBRL(dailyBudgetCents(budget.amountCents, budget.spentCents, budget.endAt))}</Text>}
+      <Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima do limite em " : "Restam "}{formatBudgetAmount(Math.abs(remaining))}</Text>
+      {periodOffset === 0 && budget.endAt !== null && Date.now() < budget.endAt && Date.now() >= budget.startAt && <Text style={[styles.daily, { color: colors.accent }]}>Disponível por dia: {formatBudgetAmount(dailyBudgetCents(budget.amountCents, budget.spentCents, budget.endAt))}</Text>}
     </View>
 
     <View style={styles.categoryHeader}><Text style={[styles.section, { color: colors.text }]}>Gastos por categoria</Text><Text style={[styles.count, { color: colors.textMuted }]}>{categories.length}</Text></View>
     <View style={[styles.categoryList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {categories.length === 0 ? <Text style={[styles.empty, { color: colors.textMuted }]}>Ainda não há despesas neste período.</Text> : segments.map((item, index) => <View key={item.id} style={[styles.categoryRow, { borderBottomColor: colors.border }, index === segments.length - 1 && { borderBottomWidth: 0 }]}>
-        <View style={[styles.dot, { backgroundColor: item.color }]} /><View style={styles.categoryCopy}><Text numberOfLines={1} style={[styles.categoryName, { color: colors.text }]}>{item.name}</Text><Text style={[styles.categoryMeta, { color: colors.textMuted }]}>{item.count} {item.count === 1 ? "lançamento" : "lançamentos"} · {Math.round(item.amountCents / Math.max(total, 1) * 100)}%{item.limitCents !== null ? ` · limite ${formatCentsToBRL(item.limitCents)}` : ""}</Text>{item.limitCents !== null && <View style={[styles.categoryTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.categoryFill, { width: `${Math.min(100, item.amountCents / Math.max(1, item.limitCents) * 100)}%`, backgroundColor: item.amountCents > item.limitCents ? colors.negative : item.color }]} /></View>}</View><Text style={[styles.categoryAmount, { color: item.limitCents !== null && item.amountCents > item.limitCents ? colors.negative : colors.text }]}>{formatCentsToBRL(item.amountCents)}</Text>
+        <View style={[styles.dot, { backgroundColor: item.color }]} /><View style={styles.categoryCopy}><Text numberOfLines={1} style={[styles.categoryName, { color: colors.text }]}>{item.name}</Text><Text style={[styles.categoryMeta, { color: colors.textMuted }]}>{item.count} {item.count === 1 ? "lançamento" : "lançamentos"} · {Math.round(item.amountCents / Math.max(total, 1) * 100)}%{item.limitCents !== null ? ` · limite ${formatBudgetAmount(item.limitCents)}` : ""}</Text>{item.limitCents !== null && <View style={[styles.categoryTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.categoryFill, { width: `${Math.min(100, item.amountCents / Math.max(1, item.limitCents) * 100)}%`, backgroundColor: item.amountCents > item.limitCents ? colors.negative : item.color }]} /></View>}</View><Text style={[styles.categoryAmount, { color: item.limitCents !== null && item.amountCents > item.limitCents ? colors.negative : colors.text }]}>{formatBudgetAmount(item.amountCents)}</Text>
       </View>)}
     </View>
   </Screen></ScrollView><BottomNav /></View>;

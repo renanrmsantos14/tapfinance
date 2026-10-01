@@ -9,7 +9,22 @@ export type TransactionFilters = {
   categoryId: string | null;
   status: "all" | Transaction["status"];
   kind: "all" | Transaction["kind"];
+  tag?: string | null;
 };
+
+function tagKey(value: string): string {
+  return value.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+}
+
+export function getTransactionTagOptions(items: Transaction[], selectedTag: string | null = null): string[] {
+  const options = new Map<string, string>();
+  for (const tag of [...items.flatMap((item) => item.tags), ...(selectedTag ? [selectedTag] : [])]) {
+    const key = tagKey(tag);
+    if (key && !options.has(key)) options.set(key, tag.normalize("NFC").trim().replace(/\s+/g, " "));
+  }
+  if (selectedTag && tagKey(selectedTag)) options.set(tagKey(selectedTag), selectedTag);
+  return [...options.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
 
 export function filterTransactions(items: Transaction[], filters: TransactionFilters): Transaction[] {
   const monthStart = new Date(filters.month.getFullYear(), filters.month.getMonth(), 1).getTime();
@@ -22,6 +37,11 @@ export function filterTransactions(items: Transaction[], filters: TransactionFil
     if (filters.categoryId && item.categoryId !== filters.categoryId) return false;
     if (filters.status !== "all" && item.status !== filters.status) return false;
     if (filters.kind !== "all" && item.kind !== filters.kind) return false;
+    if (filters.tag !== undefined && filters.tag !== null) {
+      const selected = tagKey(filters.tag);
+      const tags = item.tags.map(tagKey).filter(Boolean);
+      if (selected ? !tags.includes(selected) : tags.length > 0) return false;
+    }
     return !query || [item.title, item.description, item.notes, item.categoryName, item.accountName, ...item.tags]
       .some((value) => value?.toLocaleLowerCase("pt-BR").includes(query));
   });

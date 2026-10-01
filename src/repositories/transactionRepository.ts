@@ -19,6 +19,7 @@ type TransactionRow = {
   updated_at: number;
   account_id: string;
   account_name: string;
+  account_currency: string;
   title: string | null;
   notes: string | null;
   tags_json: string;
@@ -45,6 +46,7 @@ function mapTransaction(row: TransactionRow): Transaction {
     updatedAt: row.updated_at,
     accountId: row.account_id,
     accountName: row.account_name,
+    accountCurrency: row.account_currency,
     title: row.title,
     notes: row.notes,
     tags: readTransactionTags(row.tags_json),
@@ -60,7 +62,7 @@ function mapTransaction(row: TransactionRow): Transaction {
 const selectBase = `
   SELECT t.id, t.type, t.amount_cents, t.category_id, c.name AS category_name,
     c.icon AS category_icon, t.description, t.occurred_at, t.created_at, t.updated_at,
-    t.account_id, a.name AS account_name, t.title, t.notes, t.tags_json, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id, il.id AS initial_loan_id
+    t.account_id, a.name AS account_name, a.currency AS account_currency, t.title, t.notes, t.tags_json, t.status, t.kind, t.transfer_group_id, t.goal_id, t.loan_id, t.schedule_id, il.id AS initial_loan_id
   FROM transactions t JOIN categories c ON c.id = t.category_id
   JOIN accounts a ON a.id = t.account_id
   LEFT JOIN loans il ON il.initial_transaction_id = t.id
