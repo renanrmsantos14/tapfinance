@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "../src/components/Text";
-import { ChevronLeft, ChevronRight, Plus, Search, SlidersHorizontal } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Plus, Search, SlidersHorizontal, X } from "lucide-react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
@@ -19,26 +19,37 @@ import { filterTransactions, getTransactionTagOptions, transactionDayKey } from 
 
 type Filter = "all" | TransactionType;
 
-function monthFromParam(value: string | undefined) {
+function timestampParam(value: string | undefined): number | null {
   const parsed = Number(value);
-  const base = Number.isSafeInteger(parsed) && Number.isFinite(new Date(parsed).getTime()) ? new Date(parsed) : new Date();
+  return value !== undefined && Number.isSafeInteger(parsed) && Number.isFinite(new Date(parsed).getTime()) ? parsed : null;
+}
+
+function monthFromParam(value: string | undefined) {
+  const base = new Date(timestampParam(value) ?? Date.now());
   return new Date(base.getFullYear(), base.getMonth(), 1);
+}
+
+function rangeFromParams(from: string | undefined, to: string | undefined) {
+  const start = timestampParam(from); const end = timestampParam(to);
+  return start !== null && end !== null && end > start ? { start, end } : null;
 }
 
 export default function TransactionsScreen() {
   const db = useSQLiteContext();
   const colors = useAppColors();
-  const params = useLocalSearchParams<{ categoryId?: string; month?: string }>();
-  const [filter, setFilter] = useState<Filter>("all");
+  const params = useLocalSearchParams<{ categoryId?: string; month?: string; from?: string; to?: string; status?: string; kind?: string; type?: string; accountCurrency?: string }>();
+  const [filter, setFilter] = useState<Filter>(() => params.type === "expense" || params.type === "income" ? params.type : "all");
+  // Drill-downs from Categorias and Orçamentos pass the exact period, so the list reconciles with the card the user tapped.
+  const [range, setRange] = useState(() => rangeFromParams(params.from, params.to));
   const [items, setItems] = useState<Transaction[]>([]);
-  const [month, setMonth] = useState(() => monthFromParam(params.month));
+  const [month, setMonth] = useState(() => monthFromParam(params.month ?? params.from));
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(params.categoryId ?? null);
-  const [status, setStatus] = useState<"all" | Transaction["status"]>("all");
-  const [kind, setKind] = useState<"all" | Transaction["kind"]>("all");
+  const [status, setStatus] = useState<"all" | Transaction["status"]>(() => params.status === "paid" || params.status === "pending" ? params.status : "all");
+  const [kind, setKind] = useState<"all" | Transaction["kind"]>(() => params.kind === "standard" || params.kind === "transfer" || params.kind === "correction" ? params.kind : "all");
   const [tag, setTag] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -68,9 +79,13 @@ export default function TransactionsScreen() {
   }, [load]));
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   const tagOptions = useMemo(() => getTransactionTagOptions(items, tag), [items, tag]);
-  const filteredItems = useMemo(() => filterTransactions(items, { month, type: filter, query, accountId, categoryId, status, kind, tag }), [items, month, filter, query, accountId, categoryId, status, kind, tag]);
-  const hasActiveFilters = filter !== "all" || !!query.trim() || !!accountId || !!categoryId || status !== "all" || kind !== "all" || tag !== null;
-  function resetFilters() { setFilter("all"); setQuery(""); setAccountId(null); setCategoryId(null); setStatus("all"); setKind("all"); setTag(null); }
+  const rangeCurrency = params.accountCurrency?.trim().toUpperCase() || null;
+  const filteredItems = useMemo(() => {
+    const scoped = filterTransactions(items, { month, range, type: filter, query, accountId, categoryId, status, kind, tag });
+    return range && rangeCurrency ? scoped.filter((item) => (item.accountCurrency ?? "BRL").trim().toUpperCase() === rangeCurrency) : scoped;
+  }, [items, month, range, rangeCurrency, filter, query, accountId, categoryId, status, kind, tag]);
+  const hasActiveFilters = filter !== "all" || !!query.trim() || !!accountId || !!categoryId || status !== "all" || kind !== "all" || tag !== null || range !== null;
+  function resetFilters() { setFilter("all"); setQuery(""); setAccountId(null); setCategoryId(null); setStatus("all"); setKind("all"); setTag(null); setRange(null); }
   const totals = useMemo(() => {
     try {
       const currencies = accounts.filter((account) => accountId ? account.id === accountId : !account.isArchived).map((account) => account.currency);
@@ -86,15 +101,18 @@ export default function TransactionsScreen() {
     return selected && !base.some((category) => category.id === selected.id) ? [selected, ...base] : base;
   }, [categories, categoryId, visibleCategories]);
   const dayGroups = useMemo(() => {
-    const groups: { key: string; label: string; items: Transaction[]; net: number; currency: string }[] = [];
+    // One net per currency per day; amounts in different currencies are never added together.
+    const groups: { key: string; label: string; items: Transaction[]; nets: Map<string, number> }[] = [];
     for (const item of filteredItems) {
       const key = transactionDayKey(item.occurredAt);
-      const group = groups[groups.length - 1]?.key === key ? groups[groups.length - 1] : null;
-      const signed = item.kind === "standard" ? (item.type === "income" ? item.amountCents : -item.amountCents) : 0;
-      if (group) { group.items.push(item); group.net += signed; }
-      else groups.push({ key, label: formatDate(item.occurredAt), items: [item], net: signed, currency: item.accountCurrency ?? "BRL" });
+      let group = groups[groups.length - 1]?.key === key ? groups[groups.length - 1] : null;
+      if (!group) { group = { key, label: formatDate(item.occurredAt), items: [], nets: new Map() }; groups.push(group); }
+      group.items.push(item);
+      if (item.kind !== "standard") continue;
+      const currency = (item.accountCurrency ?? "BRL").trim().toUpperCase();
+      group.nets.set(currency, (group.nets.get(currency) ?? 0) + (item.type === "income" ? item.amountCents : -item.amountCents));
     }
-    return groups;
+    return groups.map((group) => ({ ...group, netLabel: [...group.nets.entries()].filter(([, net]) => net !== 0).map(([currency, net]) => `${net > 0 ? "+ " : "− "}${formatCentsByCurrency(Math.abs(net), currency)}`).join(" · ") }));
   }, [filteredItems]);
 
   return (
@@ -111,11 +129,14 @@ export default function TransactionsScreen() {
             </Pressable>
           </View>
 
-          <View style={[styles.monthPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {range ? <View style={[styles.monthPicker, { backgroundColor: colors.accentSoft, borderColor: colors.accentSoft }]}>
+            <Text numberOfLines={1} style={[type.bodyStrong, styles.monthLabel, { color: colors.accentText, paddingLeft: 12 }]}>{formatDate(range.start)} — {formatDate(range.end - 1)}</Text>
+            <QuietButton accessibilityLabel="Voltar ao mês inteiro" onPress={() => setRange(null)} style={styles.monthArrow}><X color={colors.accentText} size={18} strokeWidth={2.4} /></QuietButton>
+          </View> : <View style={[styles.monthPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <QuietButton accessibilityLabel="Mês anterior" onPress={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1))} style={styles.monthArrow}><ChevronLeft color={colors.text} size={20} strokeWidth={2.4} /></QuietButton>
             <Text style={[type.bodyStrong, styles.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
             <QuietButton accessibilityLabel="Próximo mês" onPress={() => setMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1))} style={styles.monthArrow}><ChevronRight color={colors.text} size={20} strokeWidth={2.4} /></QuietButton>
-          </View>
+          </View>}
 
           <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}><Search color={colors.textMuted} size={18} strokeWidth={2.2} /><TextInput accessibilityLabel="Buscar transações" placeholder="Buscar por nome, categoria ou valor" placeholderTextColor={colors.textMuted} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: colors.text }]} returnKeyType="search" /></View>
 
@@ -152,7 +173,7 @@ export default function TransactionsScreen() {
           ) : filteredItems.length === 0 ? (
             <EmptyState title="Nada por aqui" description="Não há lançamentos neste mês para esta busca e filtro." actionLabel={hasActiveFilters ? "Zerar filtros" : "Criar lançamento"} onAction={hasActiveFilters ? resetFilters : () => router.push("/quick-entry")} />
           ) : dayGroups.map((group) => <View key={group.key} style={styles.dayGroup}>
-            <View style={styles.dayHeader}><Text style={[type.metaStrong, { color: colors.textMuted }]}>{group.label}</Text><Text style={[type.metaStrong, { color: colors.textMuted, fontVariant: ["tabular-nums"] }]}>{group.net === 0 ? "" : `${group.net > 0 ? "+ " : "− "}${formatCentsByCurrency(Math.abs(group.net), group.currency)}`}</Text></View>
+            <View style={styles.dayHeader}><Text style={[type.metaStrong, { color: colors.textMuted }]}>{group.label}</Text><Text numberOfLines={1} style={[type.metaStrong, { color: colors.textMuted, fontVariant: ["tabular-nums"], flexShrink: 1 }]}>{group.netLabel}</Text></View>
             <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               {group.items.map((item, index) => <TransactionItem key={item.id} transaction={item} showDate={false} isLast={index === group.items.length - 1} onPress={() => router.push(`/transaction/${item.id}`)} />)}
             </View>

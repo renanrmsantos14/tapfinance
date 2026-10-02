@@ -84,7 +84,7 @@ export default function CategoriesScreen() {
             </Tile>
             {group.categories.map((item) => {
               const Icon = categoryIcon(item.icon) ?? Ellipsis;
-              return <Tile key={item.id} onPress={() => router.push({ pathname: "/transactions", params: { categoryId: item.id, month: String(month.getTime()) } })} accessibilityLabel={`${item.name}: ${formatCentsByCurrency(item.total, group.currency)}, ${Math.round(item.percentage)}% das despesas`} accessibilityHint="Abre o extrato filtrado por esta categoria" style={styles.categoryTile}>
+              return <Tile key={item.id} onPress={() => router.push({ pathname: "/transactions", params: { categoryId: item.id, from: String(month.getTime()), to: String(new Date(month.getFullYear(), month.getMonth() + 1, 1).getTime()), status: "paid", kind: "standard", type: "expense", accountCurrency: group.currency } })} accessibilityLabel={`${item.name}: ${formatCentsByCurrency(item.total, group.currency)}, ${Math.round(item.percentage)}% das despesas`} accessibilityHint="Abre o extrato filtrado por esta categoria" style={styles.categoryTile}>
                 <IconBox icon={Icon} color={colors.accentText} background={colors.accentSoft} />
                 <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.text }]}>{item.name}</Text>
                 <Text style={[type.stat, { color: colors.text, fontSize: 20 }]}>{formatCentsByCurrency(item.total, group.currency).replace(/^[A-Z$ ]+ /, "")}</Text>

@@ -10,6 +10,8 @@ export type TransactionFilters = {
   status: "all" | Transaction["status"];
   kind: "all" | Transaction["kind"];
   tag?: string | null;
+  /** Exact period; when present it replaces the calendar month. */
+  range?: { start: number; end: number } | null;
 };
 
 function tagKey(value: string): string {
@@ -27,8 +29,8 @@ export function getTransactionTagOptions(items: Transaction[], selectedTag: stri
 }
 
 export function filterTransactions(items: Transaction[], filters: TransactionFilters): Transaction[] {
-  const monthStart = new Date(filters.month.getFullYear(), filters.month.getMonth(), 1).getTime();
-  const monthEnd = new Date(filters.month.getFullYear(), filters.month.getMonth() + 1, 1).getTime();
+  const monthStart = filters.range ? filters.range.start : new Date(filters.month.getFullYear(), filters.month.getMonth(), 1).getTime();
+  const monthEnd = filters.range ? filters.range.end : new Date(filters.month.getFullYear(), filters.month.getMonth() + 1, 1).getTime();
   const query = filters.query.trim().toLocaleLowerCase("pt-BR");
   return items.filter((item) => {
     if (item.occurredAt < monthStart || item.occurredAt >= monthEnd) return false;

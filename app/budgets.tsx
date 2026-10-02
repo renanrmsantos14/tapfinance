@@ -105,13 +105,10 @@ export default function BudgetsScreen() {
     ]);
   }
 
-  const groups = Object.values(budgets.reduce<Record<string, { currency: string; spent: number; limit: number; endAt: number | null }>>((acc, budget) => {
-    const group = acc[budget.currency] ?? { currency: budget.currency, spent: 0, limit: 0, endAt: null };
-    group.spent += budget.spentCents; group.limit += budget.amountCents;
-    if (budget.cycle === "monthly" && budget.endAt) group.endAt = budget.endAt;
-    acc[budget.currency] = group;
-    return acc;
-  }, {}));
+  // Budgets may overlap in categories and periods, so the overview never sums spentCents across them.
+  const ranked = [...budgets].sort((a, b) => b.spentCents / Math.max(b.amountCents, 1) - a.spentCents / Math.max(a.amountCents, 1));
+  const focus = ranked[0];
+  const overCount = budgets.filter((budget) => budget.spentCents > budget.amountCents).length;
   const now = Date.now();
 
   return (
@@ -124,20 +121,21 @@ export default function BudgetsScreen() {
         {loading ? <Text style={[type.body, { color: colors.textMuted, marginTop: 24 }]}>Atualizando orçamentos…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : budgets.length === 0 ? (
           <EmptyState title="Seu primeiro orçamento" description="Defina um limite mensal ou semanal para acompanhar os gastos." actionLabel="Criar orçamento" onAction={openCreate} />
         ) : <BentoGrid>
-          {groups.map((group) => {
-            const progress = group.spent / Math.max(group.limit, 1);
-            const over = group.spent > group.limit;
-            const daysLeft = group.endAt && group.endAt > now ? Math.max(1, Math.ceil((group.endAt - now) / DAY)) : null;
-            return <Tile key={group.currency} ink span style={styles.totalTile}>
+          {focus && (() => {
+            const progress = focus.spentCents / Math.max(focus.amountCents, 1);
+            const over = progress > 1;
+            const daysLeft = focus.endAt && focus.endAt > now && focus.startAt <= now ? Math.max(1, Math.ceil((focus.endAt - now) / DAY)) : null;
+            return <Tile ink span onPress={() => router.push(`/budget/${focus.id}`)} accessibilityLabel={`Orçamento mais usado: ${focus.name}, ${Math.round(progress * 100)}%`} style={styles.totalTile}>
               <Ring value={progress} size={104} stroke={10} label={`${Math.round(progress * 100)}%`} track="rgba(255,255,255,0.12)" textColor={colors.inkText} color={over ? colors.negative : colors.accent} />
               <View style={{ flex: 1, gap: 4 }}>
-                <Label style={{ color: colors.inkMuted }}>Total {groups.length > 1 ? `· ${group.currency}` : "do período"}</Label>
-                <Text style={[type.stat, { color: colors.inkText, fontSize: 26 }]}>{formatCentsByCurrency(group.spent, group.currency)}</Text>
-                <Text style={[type.metaStrong, { color: over ? colors.negative : colors.inkMuted }]}>de {formatCentsByCurrency(group.limit, group.currency)} · {over ? `${formatCentsByCurrency(group.spent - group.limit, group.currency)} acima` : `${formatCentsByCurrency(group.limit - group.spent, group.currency)} restam`}</Text>
-                {daysLeft !== null && !over && <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}><Text style={[type.metaStrong, { color: colors.accentText, fontSize: 11 }]}>{formatCentsByCurrency(Math.floor((group.limit - group.spent) / daysLeft), group.currency)}/dia · faltam {daysLeft} dias</Text></View>}
+                <Label style={{ color: colors.inkMuted }}>{budgets.length > 1 ? "Mais usado" : "Este período"}</Label>
+                <Text numberOfLines={1} style={[type.stat, { color: colors.inkText, fontSize: 22 }]}>{focus.name}</Text>
+                <Text style={[type.metaStrong, { color: over ? colors.negative : colors.inkMuted }]}>{formatCentsByCurrency(focus.spentCents, focus.currency)} de {formatCentsByCurrency(focus.amountCents, focus.currency)} · {over ? `${formatCentsByCurrency(focus.spentCents - focus.amountCents, focus.currency)} acima` : `${formatCentsByCurrency(focus.amountCents - focus.spentCents, focus.currency)} restam`}</Text>
+                {budgets.length > 1 && <Text style={[type.meta, { color: colors.inkMuted }]}>{budgets.length} orçamentos · {overCount === 0 ? "nenhum estourado" : `${overCount} ${overCount === 1 ? "estourado" : "estourados"}`}</Text>}
+                {daysLeft !== null && !over && <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}><Text style={[type.metaStrong, { color: colors.accentText, fontSize: 11 }]}>{formatCentsByCurrency(Math.floor((focus.amountCents - focus.spentCents) / daysLeft), focus.currency)}/dia · faltam {daysLeft} dias</Text></View>}
               </View>
             </Tile>;
-          })}
+          })()}
           {budgets.map((budget) => {
             const progress = budget.spentCents / Math.max(budget.amountCents, 1);
             const remaining = budget.amountCents - budget.spentCents;

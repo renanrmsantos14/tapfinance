@@ -45,3 +45,10 @@ test("tag options deduplicate normalized names without mutating transactions or 
   assert.deepEqual(items, before);
   assert.deepEqual(filterTransactions(items, { month: new Date(2026, 8, 1), type: "all", query: "", accountId: null, categoryId: null, status: "all", kind: "all", tag: "REFEIÇÃO" }).map((item) => item.id), ["one", "two"]);
 });
+
+test("an exact range replaces the calendar month and keeps its end exclusive", () => {
+  const items = [base, { ...base, id: "two", occurredAt: new Date(2026, 8, 7, 23, 59).getTime() }, { ...base, id: "three", occurredAt: new Date(2026, 8, 8).getTime() }];
+  const filters = { month: new Date(2026, 0, 1), type: "all" as const, query: "", accountId: null, categoryId: null, status: "all" as const, kind: "all" as const };
+  assert.deepEqual(filterTransactions(items, { ...filters, range: { start: new Date(2026, 8, 1).getTime(), end: new Date(2026, 8, 8).getTime() } }).map((item) => item.id), ["two"]);
+  assert.deepEqual(filterTransactions(items, { ...filters, range: null }).map((item) => item.id), []);
+});

@@ -187,7 +187,10 @@ export default function QuickEntryScreen() {
         {suggestionId && <Text accessibilityLiveRegion="polite" style={[type.metaStrong, { color: colors.accentText, textAlign: "center", marginBottom: 10 }]}>Sugestão do banco · confira antes de salvar</Text>}
 
         <TransactionFormReferenceStatus loading={references.loading} error={references.error} onRetry={references.retry} missingAccount={references.ready && accounts.length === 0} missingCategory={references.ready && categories.length === 0} />
-        {missingRequestedTracker && <Text accessibilityRole="alert" style={[type.body, { color: colors.warning, marginBottom: 12 }]}>A meta ou empréstimo solicitado não está disponível. Nenhum vínculo será adivinhado; escolha abaixo ou salve sem vínculo.</Text>}
+        {missingRequestedTracker && <View style={[styles.alertCard, { backgroundColor: colors.warningSoft }]}>
+          <Text accessibilityRole="alert" style={[type.body, { color: colors.warning }]}>A meta ou empréstimo solicitado não está disponível. Nenhum vínculo será adivinhado.</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Continuar sem vínculo" disabled={saving} onPress={() => selectTracker(null)} style={({ pressed }) => [styles.inlineAction, { opacity: pressed ? 0.6 : 1 }]}><Text style={[type.chip, { color: colors.warning }]}>Continuar sem vínculo</Text></Pressable>
+        </View>}
 
         <View style={[styles.amountTile, { backgroundColor: colors.ink }]}>
           <View style={styles.rowBetween}>
@@ -276,4 +279,5 @@ const styles = StyleSheet.create({
   field: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
   input: { minHeight: 28, padding: 0, fontFamily: manrope.bold, fontSize: 15 },
   footer: { paddingHorizontal: 16, paddingTop: 8 },
+  alertCard: { borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, gap: 4, marginBottom: 12 },
 });

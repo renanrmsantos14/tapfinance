@@ -94,7 +94,7 @@ export default function BudgetDetailScreen() {
         const Icon = categoryIcon(item.icon ?? "") ?? Ellipsis;
         const share = Math.round(item.amountCents / Math.max(total, 1) * 100);
         const overLimit = item.limitCents !== null && item.amountCents > item.limitCents;
-        return <Tile key={item.id} tone={overLimit ? "negative" : undefined} onPress={() => router.push({ pathname: "/transactions", params: { categoryId: item.id, month: String(budget.startAt) } })} accessibilityLabel={`${item.name}: ${money(item.amountCents)}, ${share}% do gasto`} accessibilityHint="Abre o extrato filtrado por esta categoria" style={styles.categoryTile}>
+        return <Tile key={item.id} tone={overLimit ? "negative" : undefined} onPress={() => router.push({ pathname: "/transactions", params: { categoryId: item.id, from: String(budget.startAt), to: String(budget.endAt ?? Date.now()), status: "paid", kind: "standard", type: "expense", accountCurrency: budget.currency } })} accessibilityLabel={`${item.name}: ${money(item.amountCents)}, ${share}% do gasto`} accessibilityHint="Abre o extrato filtrado por esta categoria" style={styles.categoryTile}>
           <IconBox icon={Icon} color={overLimit ? colors.negative : colors.accentText} background={overLimit ? colors.negativeSoft : colors.accentSoft} />
           <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.text }]}>{item.name}</Text>
           <Text style={[type.stat, { color: overLimit ? colors.negative : colors.text, fontSize: 20 }]}>{money(item.amountCents).replace(/^[A-Z$ ]+ /, "")}</Text>

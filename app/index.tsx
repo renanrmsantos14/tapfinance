@@ -61,7 +61,9 @@ export default function HomeScreen() {
   useFocusEffect(useCallback(() => { focused.current = true; void load(); return () => { focused.current = false; loadSequence.current += 1; }; }, [load]));
 
   const primaryCurrency = summaries[0]?.currency ?? "BRL";
-  const budgetTotals = budgets.filter((budget) => budget.currency === primaryCurrency).reduce((sum, budget) => ({ spent: sum.spent + budget.spentCents, limit: sum.limit + budget.amountCents }), { spent: 0, limit: 0 });
+  // Budgets can overlap (general + per-category), so the tile follows the one closest to its limit instead of summing them.
+  const focusBudget = [...budgets].sort((a, b) => b.spentCents / Math.max(b.amountCents, 1) - a.spentCents / Math.max(a.amountCents, 1))[0];
+  const focusRatio = focusBudget ? focusBudget.spentCents / Math.max(focusBudget.amountCents, 1) : 0;
   const overBudget = budgets.find((budget) => budget.spentCents > budget.amountCents);
   const nextDue = upcoming[0];
   const topCategories = categories.slice(0, 3);
@@ -131,11 +133,12 @@ export default function HomeScreen() {
               </>}
             </Tile>
 
-            <Tile onPress={() => router.push("/budgets")} accessibilityLabel={budgetTotals.limit > 0 ? `Orçamento: ${Math.round(budgetTotals.spent / budgetTotals.limit * 100)}% usado` : "Orçamentos"} style={styles.halfTile}>
-              <Label>Orçamento</Label>
-              {budgetTotals.limit > 0 ? <>
-                <Ring value={budgetTotals.spent / budgetTotals.limit} label={`${Math.round(budgetTotals.spent / budgetTotals.limit * 100)}%`} />
-                <Text style={[type.meta, { color: budgetTotals.spent > budgetTotals.limit ? colors.negative : colors.textMuted }]}>{budgetTotals.spent > budgetTotals.limit ? `${formatCentsByCurrency(budgetTotals.spent - budgetTotals.limit, primaryCurrency)} acima` : `${formatCentsByCurrency(budgetTotals.limit - budgetTotals.spent, primaryCurrency)} restam`}</Text>
+            <Tile onPress={() => router.push(focusBudget ? `/budget/${focusBudget.id}` : "/budgets")} accessibilityLabel={focusBudget ? `Orçamento ${focusBudget.name}: ${Math.round(focusRatio * 100)}% usado` : "Orçamentos"} style={styles.halfTile}>
+              <Label>{budgets.length > 1 ? `Orçamento · ${budgets.length}` : "Orçamento"}</Label>
+              {focusBudget ? <>
+                <Ring value={focusRatio} label={`${Math.round(focusRatio * 100)}%`} />
+                <Text numberOfLines={1} style={[type.metaStrong, { color: colors.text }]}>{focusBudget.name}</Text>
+                <Text style={[type.meta, { color: focusRatio > 1 ? colors.negative : colors.textMuted }]}>{focusRatio > 1 ? `${formatCentsByCurrency(focusBudget.spentCents - focusBudget.amountCents, focusBudget.currency)} acima` : `${formatCentsByCurrency(focusBudget.amountCents - focusBudget.spentCents, focusBudget.currency)} restam`}</Text>
               </> : <Text style={[type.body, { color: colors.textMuted }]}>Defina um limite para acompanhar os gastos.</Text>}
             </Tile>
             {overBudget ? (
