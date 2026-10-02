@@ -18,7 +18,7 @@ Pré-release Android, versionCode 23. Banco permanece no esquema 6. Substitui a 
 
 - Faça backup completo antes de atualizar. Não faça downgrade nem restaure backup do esquema 6 em versão anterior.
 - Telas de Mais, Ajustes, Calendário, Relatórios, cadastros e edição de lançamento receberam apenas a fonte e os componentes novos.
-- Sem aparelho ou emulador conectado: aparência, toque, teclado, TalkBack, notificações e instalação real não foram válidados.
+- Sem aparelho ou emulador conectado: aparência, toque, teclado, TalkBack, notificações e instalação real não foram validados.
 - APK de avaliação mantém a chave debug das betas anteriores; não é assinatura de produção para Play Store.
 
 ## Verificação
