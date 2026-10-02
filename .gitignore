@@ -40,3 +40,8 @@ yarn-error.*
 /ios
 /android
 modules/*/android/build/
+
+# Ferramentas locais de agentes
+.codex-remote-attachments/
+.memsearch/
+skill-observations/
