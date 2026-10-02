@@ -3,7 +3,7 @@ import { listAccounts } from "../repositories/financeRepository";
 import { listTransactions } from "../repositories/transactionRepository";
 import { summarizeTransactionsByCurrency, type CurrencySummary } from "../utils/currencyTotals";
 
-export type CategoryTotal = { id: string; name: string; total: number; count: number; percentage: number };
+export type CategoryTotal = { id: string; name: string; icon: string; total: number; count: number; percentage: number };
 export type InsightsGroup = CurrencySummary & { count: number; categories: CategoryTotal[] };
 
 export async function loadInsightsSnapshot(db: SQLiteDatabase, monthTimestamp = Date.now()) {
@@ -19,7 +19,7 @@ export async function loadInsightsSnapshot(db: SQLiteDatabase, monthTimestamp = 
     const categories = new Map<string, CategoryTotal>();
     for (const entry of entries) {
       if (entry.type !== "expense") continue;
-      const category = categories.get(entry.categoryId) ?? { id: entry.categoryId, name: entry.categoryName, total: 0, count: 0, percentage: 0 };
+      const category = categories.get(entry.categoryId) ?? { id: entry.categoryId, name: entry.categoryName, icon: entry.categoryIcon, total: 0, count: 0, percentage: 0 };
       category.total += entry.amountCents;
       category.count += 1;
       categories.set(category.id, category);

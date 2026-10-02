@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
+import { Text } from "./Text";
 import { radius, useAppColors } from "../theme";
 
 export function SelectionChoice({ label, selected, onPress, disabled = false }: {

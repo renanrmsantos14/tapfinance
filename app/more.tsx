@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "../src/components/Text";
 import { ArrowDownUp, CalendarDays, ChartNoAxesCombined, ChevronRight, FileClock, Goal, Landmark, Repeat2, Settings2, Tags } from "lucide-react-native";
 import { router } from "expo-router";
 import { BottomNav } from "../src/components/BottomNav";

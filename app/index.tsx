@@ -1,16 +1,18 @@
 import { useCallback, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ArrowDownLeft, ArrowUpRight, Plus } from "lucide-react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "../src/components/Text";
+import { LayoutGrid, Plus } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
 import { TransactionItem } from "../src/components/TransactionItem";
-import { EmptyState, PrimaryButton, Reveal, Screen, SectionHeader, SkeletonRows } from "../src/components/ui";
+import { BentoGrid, EmptyState, Label, PrimaryButton, QuietButton, Ring, Screen, SectionHeader, SkeletonRows, Tile } from "../src/components/ui";
 import { loadHomeSnapshot } from "../src/services/homeService";
+import { loadInsightsSnapshot, type CategoryTotal } from "../src/services/insightsService";
 import type { Transaction } from "../src/types/transaction";
-import { radius, useAppColors } from "../src/theme";
-import { formatCentsByCurrency, formatCentsToBRL } from "../src/utils/currency";
-import { formatMonthLabel } from "../src/utils/dates";
+import { type, useAppColors } from "../src/theme";
+import { formatCentsByCurrency } from "../src/utils/currency";
+import { formatMonthLabel, formatShortDate } from "../src/utils/dates";
 import type { Account, Budget, Goal, Loan } from "../src/types/finance";
 import type { CurrencySummary } from "../src/utils/currencyTotals";
 
@@ -29,6 +31,8 @@ export default function HomeScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [upcoming, setUpcoming] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<CategoryTotal[]>([]);
+  const [categoryExpense, setCategoryExpense] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -41,10 +45,12 @@ export default function HomeScreen() {
     setLoading(true);
     setLoadError(false);
     try {
-      const next = await loadHomeSnapshot(db);
+      const [next, insights] = await Promise.all([loadHomeSnapshot(db), loadInsightsSnapshot(db)]);
       if (request !== loadSequence.current) return;
       setPeriod(next.period); setTransactions(next.transactions); setUpcoming(next.upcoming); setSummaries(next.summaries);
       setAccounts(next.accounts); setBudgets(next.budgets); setGoals(next.goals); setLoans(next.loans);
+      const group = insights.groups.find((item) => item.currency === (next.summaries[0]?.currency ?? "BRL")) ?? insights.groups[0];
+      setCategories(group?.categories ?? []); setCategoryExpense(group?.expense ?? 0);
     } catch {
       if (request === loadSequence.current) setLoadError(true);
     } finally {
@@ -54,6 +60,14 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => { focused.current = true; void load(); return () => { focused.current = false; loadSequence.current += 1; }; }, [load]));
 
+  const primaryCurrency = summaries[0]?.currency ?? "BRL";
+  const budgetTotals = budgets.filter((budget) => budget.currency === primaryCurrency).reduce((sum, budget) => ({ spent: sum.spent + budget.spentCents, limit: sum.limit + budget.amountCents }), { spent: 0, limit: 0 });
+  const overBudget = budgets.find((budget) => budget.spentCents > budget.amountCents);
+  const nextDue = upcoming[0];
+  const topCategories = categories.slice(0, 3);
+  const otherTotal = categories.slice(3).reduce((sum, item) => sum + item.total, 0);
+  const shade = [colors.accent, colors.accentText, colors.inkMuted];
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView
@@ -61,91 +75,110 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={colors.accent} />}
       >
         <Screen scroll={false}>
-          <Reveal style={styles.header}>
-            <View>
-              <Text style={[styles.title, { color: colors.text }]}>Visão geral</Text>
-              <Text style={[styles.subtitle, { color: colors.textMuted }]}>{formatMonthLabel(period.now.getTime(), true).toLocaleLowerCase("pt-BR")}</Text>
+          <View style={styles.header}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[type.metaStrong, { color: colors.textMuted }]}>{formatMonthLabel(period.now.getTime(), true).toLocaleLowerCase("pt-BR").replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase("pt-BR"))}</Text>
+              <Text accessibilityRole="header" style={[type.h1, { color: colors.text }]}>Visão geral</Text>
             </View>
-          </Reveal>
-
-          {loading ? <View accessibilityLiveRegion="polite"><Text style={{ color: colors.textMuted }}>Carregando visão geral…</Text><SkeletonRows count={5} /></View> : loadError ? <EmptyState title="Visão geral indisponível" description="Não foi possível consultar os dados. Nenhum saldo foi confirmado nesta tentativa." actionLabel="Tentar novamente" onAction={() => void load()} /> : <>
-          <Reveal delay={45}>
-            {summaries.length > 1 && <Text style={[styles.caption, { color: colors.textMuted, marginBottom: 10 }]}>Totais separados por moeda · sem conversão cambial</Text>}
-            {summaries.map((summary) => (
-            <View key={summary.currency} style={styles.balanceCard}>
-              <View style={styles.balanceTop}>
-                <Text style={[styles.period, { color: colors.textMuted }]}>{formatMonthLabel(period.now.getTime())}</Text>
-                <Text style={[styles.periodMeta, { color: colors.textMuted }]}>{transactions.length} recentes</Text>
-              </View>
-              <Text accessibilityLabel={`Saldo do período ${formatCentsByCurrency(summary.balance, summary.currency)}`} style={[styles.balance, { color: summary.balance < 0 ? colors.negative : colors.text }]}>{formatCentsByCurrency(summary.balance, summary.currency)}</Text>
-              <Text style={[styles.caption, { color: colors.textMuted }]}>saldo do período · {summary.currency}</Text>
-
-              <View style={[styles.metrics, { borderTopColor: colors.border }]}>
-                <Metric icon={<ArrowUpRight color={colors.positive} size={17} />} label="Receitas" value={formatCentsByCurrency(summary.income, summary.currency)} color={colors.positive} />
-                <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
-                <Metric icon={<ArrowDownLeft color={colors.negative} size={17} />} label="Despesas" value={formatCentsByCurrency(summary.expense, summary.currency)} color={colors.negative} />
-              </View>
-            </View>
-            ))}
-          </Reveal>
-
-          <SectionHeader title="Contas" actionLabel="Gerenciar" onAction={() => router.push("/collection/accounts")} />
-          <View style={styles.accountRow}>
-            {accounts.map((account) => <Pressable key={account.id} accessibilityRole="button" accessibilityLabel={`${account.name}${account.isPrimary ? ", principal" : ""}, saldo ${formatCentsByCurrency(account.balanceCents, account.currency)}`} accessibilityHint="Abre o gerenciamento de contas" onPress={() => router.push("/collection/accounts")} style={({ pressed }) => [styles.accountCard, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
-              <View style={[styles.accountDot, { backgroundColor: account.color }]} />
-              <View style={styles.accountCopy}><Text style={[styles.accountName, { color: colors.text }]}>{account.name}</Text><Text style={[styles.accountType, { color: colors.textMuted }]}>{account.isPrimary ? "Principal" : ({ checking: "Conta corrente", cash: "Dinheiro", savings: "Poupança", credit: "Crédito", investment: "Investimento" })[account.type]}</Text></View>
-              <Text style={[styles.accountBalance, { color: colors.text }]}>{formatCentsByCurrency(account.balanceCents, account.currency)}</Text>
-            </Pressable>)}
-            <Pressable accessibilityRole="button" onPress={() => router.push("/collection/accounts")} style={({ pressed }) => [styles.accountAdd, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}><Plus color={colors.accent} size={18} /><Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>Adicionar conta</Text></Pressable>
+            <QuietButton framed accessibilityLabel="Categorias" onPress={() => router.push("/categories")}><LayoutGrid color={colors.text} size={18} strokeWidth={2.2} /></QuietButton>
           </View>
 
-          {budgets.length > 0 && <>
-            <SectionHeader title="Orçamento" actionLabel="Ver todos" onAction={() => router.push("/budgets")} />
-            {budgets.slice(0, 2).map((budget) => {
-              const ratio = Math.min(budget.spentCents / Math.max(budget.amountCents, 1), 1);
-              return <Pressable key={budget.id} accessibilityRole="button" accessibilityLabel={`Orçamento ${budget.name}`} onPress={() => router.push(`/budget/${budget.id}`)} style={({ pressed }) => [styles.budgetCard, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
-                <View style={styles.budgetHead}><Text style={[styles.budgetName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.budgetPercent, { color: budget.spentCents > budget.amountCents ? colors.negative : colors.text }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
-                <View style={[styles.budgetTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.budgetFill, { width: `${ratio * 100}%`, backgroundColor: budget.color }]} /></View>
-                <Text style={[styles.budgetMeta, { color: colors.textMuted }]}>{formatCentsByCurrency(budget.spentCents, budget.currency)} gastos · {formatCentsByCurrency(budget.amountCents, budget.currency)} limite</Text>
-              </Pressable>;
-            })}
-          </>}
+          {loading ? <View accessibilityLiveRegion="polite"><Text style={[type.meta, { color: colors.textMuted, marginBottom: 8 }]}>Carregando visão geral…</Text><SkeletonRows count={5} /></View> : loadError ? <EmptyState title="Visão geral indisponível" description="Não foi possível consultar os dados. Nenhum saldo foi confirmado nesta tentativa." actionLabel="Tentar novamente" onAction={() => void load()} /> : <>
+          <BentoGrid>
+            {summaries.length > 1 && <Text style={[type.meta, { color: colors.textMuted, width: "100%", paddingHorizontal: 4 }]}>Totais separados por moeda · sem conversão cambial</Text>}
+            {summaries.map((summary) => (
+              <Tile key={summary.currency} ink span style={styles.heroTile}>
+                <View style={styles.rowBetween}>
+                  <Label style={{ color: colors.inkMuted }}>Saldo do período · {summary.currency}</Label>
+                  <Text style={[type.metaStrong, { color: colors.inkMuted }]}>{transactions.length} recentes</Text>
+                </View>
+                <Text accessibilityLabel={`Saldo do período ${formatCentsByCurrency(summary.balance, summary.currency)}`} style={[type.hero, { color: summary.balance < 0 ? colors.negative : colors.inkText }]}>{formatCentsByCurrency(summary.balance, summary.currency)}</Text>
+                <View style={styles.accountRow}>
+                  {accounts.filter((account) => account.currency === summary.currency).slice(0, 3).map((account) => (
+                    <Pressable key={account.id} accessibilityRole="button" accessibilityLabel={`${account.name}, saldo ${formatCentsByCurrency(account.balanceCents, account.currency)}`} onPress={() => router.push("/collection/accounts")} style={styles.accountChip}>
+                      <View style={[styles.accountDot, { backgroundColor: account.color }]} />
+                      <Text numberOfLines={1} style={[type.metaStrong, { color: colors.inkMuted }]}>{account.name} <Text style={{ color: colors.inkText }}>{formatCentsByCurrency(account.balanceCents, account.currency).replace(/^[A-Z$ ]+ /, "")}</Text></Text>
+                    </Pressable>
+                  ))}
+                  {accounts.length === 0 && <Pressable accessibilityRole="button" onPress={() => router.push("/collection/accounts")}><Text style={[type.metaStrong, { color: colors.accentText }]}>Adicionar conta →</Text></Pressable>}
+                </View>
+              </Tile>
+            ))}
 
-          {goals.length > 0 && <>
-            <SectionHeader title="Metas" actionLabel="Ver todas" onAction={() => router.push("/collection/goals")} />
-            {goals.slice(0, 2).map((goal) => <Pressable key={goal.id} accessibilityRole="button" accessibilityLabel={`Meta ${goal.name}`} onPress={() => router.push(`/tracker/goals/${goal.id}`)} style={({ pressed }) => [styles.budgetCard, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
-              <View style={styles.budgetHead}><Text style={[styles.budgetName, { color: colors.text }]}>{goal.name}</Text><Text style={[styles.budgetPercent, { color: colors.text }]}>{Math.round(goal.progressCents / Math.max(goal.targetCents, 1) * 100)}%</Text></View>
-              <View style={[styles.budgetTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.budgetFill, { width: `${Math.min(goal.progressCents / Math.max(goal.targetCents, 1) * 100, 100)}%`, backgroundColor: goal.color }]} /></View>
-              <Text style={[styles.budgetMeta, { color: colors.textMuted }]}>{formatCentsToBRL(goal.progressCents)} de {formatCentsToBRL(goal.targetCents)}</Text>
-            </Pressable>)}
-          </>}
+            {summaries[0] && <>
+              <Tile tone="accent" style={styles.halfTile}>
+                <Label style={{ color: colors.accentText }}>Receitas</Label>
+                <Text style={[type.stat, { color: colors.text }]}>{formatCentsByCurrency(summaries[0].income, summaries[0].currency)}</Text>
+                <Text style={[type.meta, { color: colors.accentText }]}>no período</Text>
+              </Tile>
+              <Tile style={styles.halfTile}>
+                <Label>Despesas</Label>
+                <Text style={[type.stat, { color: colors.text }]}>{formatCentsByCurrency(summaries[0].expense, summaries[0].currency)}</Text>
+                <Text style={[type.meta, { color: colors.textMuted }]}>{categories.reduce((sum, item) => sum + item.count, 0)} lançamentos pagos</Text>
+              </Tile>
+            </>}
 
-          {loans.length > 0 && <>
-            <SectionHeader title="Empréstimos" actionLabel="Ver todos" onAction={() => router.push("/collection/loans")} />
-            {loans.slice(0, 2).map((loan) => <Pressable key={loan.id} accessibilityRole="button" accessibilityLabel={`Empréstimo ${loan.name}`} onPress={() => router.push(`/tracker/loans/${loan.id}`)} style={({ pressed }) => [styles.budgetCard, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", borderBottomColor: colors.border }]}>
-              <View style={styles.budgetHead}><Text style={[styles.budgetName, { color: colors.text }]}>{loan.name}</Text><Text style={[styles.budgetPercent, { color: loan.remainingCents === 0 ? colors.positive : colors.text }]}>{Math.round((1 - loan.remainingCents / Math.max(loan.principalCents, 1)) * 100)}%</Text></View>
-              <View style={[styles.budgetTrack, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.budgetFill, { width: `${Math.max(0, Math.min((1 - loan.remainingCents / Math.max(loan.principalCents, 1)) * 100, 100))}%`, backgroundColor: loan.color }]} /></View>
-              <Text style={[styles.budgetMeta, { color: colors.textMuted }]}>{loan.direction === "lent" ? "A receber" : "A pagar"} · {formatCentsToBRL(loan.remainingCents)} restantes</Text>
-            </Pressable>)}
-          </>}
+            <Tile span onPress={() => router.push("/categories")} accessibilityLabel="Gastos por categoria" accessibilityHint="Abre a tela de categorias" style={styles.spanTile}>
+              <View style={styles.rowBetween}><Label>Gastos por categoria</Label><Text style={[type.metaStrong, { color: colors.accentText }]}>Ver todas</Text></View>
+              {categories.length === 0 ? <Text style={[type.body, { color: colors.textMuted }]}>Nenhuma despesa paga neste mês ainda.</Text> : <>
+                <View style={[styles.stack, { backgroundColor: colors.surfaceMuted }]}>
+                  {topCategories.map((item, index) => <View key={item.id} style={{ width: `${Math.max(item.total / Math.max(categoryExpense, 1) * 100, 2)}%`, backgroundColor: shade[index] }} />)}
+                </View>
+                <View style={styles.legend}>
+                  {topCategories.map((item, index) => <View key={item.id} style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: shade[index] }]} /><Text numberOfLines={1} style={[type.chip, { color: colors.text, flex: 1 }]}>{item.name}</Text><Text style={[type.amount, { color: colors.text, fontSize: 13 }]}>{formatCentsByCurrency(item.total, primaryCurrency).replace(/^[A-Z$ ]+ /, "")}</Text></View>)}
+                  {otherTotal > 0 && <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: colors.surfaceMuted }]} /><Text numberOfLines={1} style={[type.chip, { color: colors.textMuted, flex: 1 }]}>Outras</Text><Text style={[type.amount, { color: colors.textMuted, fontSize: 13 }]}>{formatCentsByCurrency(otherTotal, primaryCurrency).replace(/^[A-Z$ ]+ /, "")}</Text></View>}
+                </View>
+              </>}
+            </Tile>
 
-          <Reveal delay={85}>
-            <PrimaryButton accessibilityLabel="Criar novo lançamento" onPress={() => router.push("/quick-entry")} style={styles.cta}>
-              <Plus color={colors.background} size={19} strokeWidth={2.5} />
-              Novo lançamento
-            </PrimaryButton>
-          </Reveal>
+            <Tile onPress={() => router.push("/budgets")} accessibilityLabel={budgetTotals.limit > 0 ? `Orçamento: ${Math.round(budgetTotals.spent / budgetTotals.limit * 100)}% usado` : "Orçamentos"} style={styles.halfTile}>
+              <Label>Orçamento</Label>
+              {budgetTotals.limit > 0 ? <>
+                <Ring value={budgetTotals.spent / budgetTotals.limit} label={`${Math.round(budgetTotals.spent / budgetTotals.limit * 100)}%`} />
+                <Text style={[type.meta, { color: budgetTotals.spent > budgetTotals.limit ? colors.negative : colors.textMuted }]}>{budgetTotals.spent > budgetTotals.limit ? `${formatCentsByCurrency(budgetTotals.spent - budgetTotals.limit, primaryCurrency)} acima` : `${formatCentsByCurrency(budgetTotals.limit - budgetTotals.spent, primaryCurrency)} restam`}</Text>
+              </> : <Text style={[type.body, { color: colors.textMuted }]}>Defina um limite para acompanhar os gastos.</Text>}
+            </Tile>
+            {overBudget ? (
+              <Tile tone="negative" onPress={() => router.push(`/budget/${overBudget.id}`)} accessibilityLabel={`Orçamento ${overBudget.name} estourado`} style={styles.halfTile}>
+                <Label style={{ color: colors.negative }}>Estourado</Label>
+                <Text numberOfLines={2} style={[type.stat, { color: colors.text }]}>{overBudget.name}</Text>
+                <Text style={[type.metaStrong, { color: colors.negative }]}>{formatCentsByCurrency(overBudget.spentCents - overBudget.amountCents, overBudget.currency)} acima · {Math.round(overBudget.spentCents / Math.max(overBudget.amountCents, 1) * 100)}%</Text>
+              </Tile>
+            ) : (
+              <Tile onPress={() => router.push(nextDue ? `/transaction/${nextDue.id}` : "/calendar")} accessibilityLabel={nextDue ? `A vencer: ${nextDue.title || nextDue.categoryName}` : "Calendário"} style={styles.halfTile}>
+                <Label>A vencer</Label>
+                {nextDue ? <>
+                  <Text style={[type.stat, { color: colors.text }]}>{formatCentsByCurrency(nextDue.amountCents, nextDue.accountCurrency)}</Text>
+                  <Text numberOfLines={1} style={[type.metaStrong, { color: colors.warning }]}>{nextDue.title || nextDue.categoryName} · {formatShortDate(nextDue.occurredAt)}</Text>
+                </> : <Text style={[type.body, { color: colors.textMuted }]}>Nada pendente nos próximos dias.</Text>}
+              </Tile>
+            )}
 
-          {upcoming.length > 0 && <><SectionHeader title="Próximos lançamentos" actionLabel="Calendário" onAction={() => router.push("/calendar")} /><View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>{upcoming.map((transaction, index) => <TransactionItem key={transaction.id} transaction={transaction} isLast={index === upcoming.length - 1} onPress={() => router.push(`/transaction/${transaction.id}`)} />)}</View></>}
+            {(goals.length > 0 || loans.length > 0) && <Tile span style={styles.spanTile}>
+              <View style={styles.rowBetween}><Label>Metas e empréstimos</Label><Pressable accessibilityRole="button" onPress={() => router.push(goals.length > 0 ? "/collection/goals" : "/collection/loans")}><Text style={[type.metaStrong, { color: colors.accentText }]}>Ver todos</Text></Pressable></View>
+              {goals.slice(0, 2).map((goal) => <Pressable key={goal.id} accessibilityRole="button" accessibilityLabel={`Meta ${goal.name}`} onPress={() => router.push(`/tracker/goals/${goal.id}`)} style={styles.trackerRow}>
+                <View style={styles.rowBetween}><Text style={[type.bodyStrong, { color: colors.text }]}>{goal.name}</Text><Text style={[type.amount, { color: colors.text }]}>{Math.round(goal.progressCents / Math.max(goal.targetCents, 1) * 100)}%</Text></View>
+                <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${Math.min(goal.progressCents / Math.max(goal.targetCents, 1) * 100, 100)}%`, backgroundColor: colors.accent }]} /></View>
+              </Pressable>)}
+              {loans.slice(0, 2).map((loan) => <Pressable key={loan.id} accessibilityRole="button" accessibilityLabel={`Empréstimo ${loan.name}`} onPress={() => router.push(`/tracker/loans/${loan.id}`)} style={styles.trackerRow}>
+                <View style={styles.rowBetween}><Text style={[type.bodyStrong, { color: colors.text }]}>{loan.name}</Text><Text style={[type.meta, { color: colors.textMuted }]}>{loan.direction === "lent" ? "A receber" : "A pagar"} · {formatCentsByCurrency(loan.remainingCents)}</Text></View>
+                <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${Math.max(0, Math.min((1 - loan.remainingCents / Math.max(loan.principalCents, 1)) * 100, 100))}%`, backgroundColor: colors.accent }]} /></View>
+              </Pressable>)}
+            </Tile>}
+          </BentoGrid>
 
-          <SectionHeader title="Movimentações recentes" actionLabel="Ver histórico" onAction={() => router.push("/transactions")} />
+          <SectionHeader title="Recentes" actionLabel="Ver histórico" onAction={() => router.push("/transactions")} />
           <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {transactions.length === 0 ? (
               <EmptyState embedded title="Comece pelo primeiro lançamento" description="Registre uma receita ou despesa. Leva poucos segundos." actionLabel="Adicionar lançamento" onAction={() => router.push("/quick-entry")} />
-            ) : transactions.map((transaction, index) => (
-              <TransactionItem key={transaction.id} transaction={transaction} isLast={index === transactions.length - 1} onPress={() => router.push(`/transaction/${transaction.id}`)} />
+            ) : transactions.slice(0, 5).map((transaction, index, list) => (
+              <TransactionItem key={transaction.id} transaction={transaction} isLast={index === list.length - 1} onPress={() => router.push(`/transaction/${transaction.id}`)} />
             ))}
           </View>
+          <PrimaryButton accessibilityLabel="Criar novo lançamento" onPress={() => router.push("/quick-entry")} style={styles.cta}>
+            <Plus color={colors.accentContrast} size={19} strokeWidth={2.6} />
+            Novo lançamento
+          </PrimaryButton>
           </>}
         </Screen>
       </ScrollView>
@@ -154,41 +187,24 @@ export default function HomeScreen() {
   );
 }
 
-function Metric({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
-  const colors = useAppColors();
-  return (
-    <View style={styles.metric}>
-      <View style={styles.metricTop}>{icon}<Text style={[styles.metricLabel, { color: colors.textMuted }]}>{label}</Text></View>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { paddingBottom: 28 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 },
-  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.6 },
-  subtitle: { fontSize: 14, marginTop: 5 },
-  balanceCard: { paddingVertical: 12, marginBottom: 24 },
-  balanceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  period: { fontSize: 11, fontWeight: "700", letterSpacing: 1.15 },
-  periodMeta: { fontSize: 12 },
-  balance: { fontSize: 36, fontWeight: "600", fontVariant: ["tabular-nums"], letterSpacing: -1, marginTop: 16 },
-  caption: { fontSize: 13, marginTop: 3 },
-  metrics: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, marginTop: 22, paddingTop: 18 },
-  metric: { flex: 1, gap: 7 },
-  metricTop: { flexDirection: "row", gap: 7, alignItems: "center" },
-  metricLabel: { flexShrink: 1, fontSize: 13 },
-  metricValue: { fontSize: 16, fontWeight: "600", fontVariant: ["tabular-nums"] },
-  metricDivider: { width: StyleSheet.hairlineWidth, marginHorizontal: 18 },
-  cta: { marginTop: 14, marginBottom: 28 },
-  list: { paddingHorizontal: 0 },
-  accountRow: { paddingBottom: 20 },
-  accountCard: { minHeight: 68, flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 12, rowGap: 8, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderRadius: radius.sm },
-  accountCopy: { flex: 1, minWidth: 100, gap: 4 }, accountDot: { width: 8, height: 8, borderRadius: 4 }, accountType: { fontSize: 12 },
-  accountName: { fontSize: 15, fontWeight: "600" }, accountBalance: { maxWidth: "100%", flexShrink: 1, fontSize: 16, fontWeight: "600", fontVariant: ["tabular-nums"] },
-  accountAdd: { minHeight: 48, borderRadius: radius.sm, flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 4 },
-  budgetCard: { borderRadius: radius.sm, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 16, paddingHorizontal: 4, marginBottom: 8 }, budgetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }, budgetName: { flex: 1, fontSize: 15, fontWeight: "600" }, budgetPercent: { fontSize: 16, fontWeight: "600", fontVariant: ["tabular-nums"] },
-  budgetTrack: { height: 5, borderRadius: 3, marginTop: 12, overflow: "hidden" }, budgetFill: { height: "100%", borderRadius: 3 }, budgetMeta: { fontSize: 12, lineHeight: 18, marginTop: 9 },
+  scroll: { paddingBottom: 12 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, paddingHorizontal: 4 },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  heroTile: { padding: 20, gap: 10 },
+  halfTile: { width: "48%", flexGrow: 1, gap: 6, justifyContent: "space-between" },
+  spanTile: { gap: 12 },
+  accountRow: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 2 },
+  accountChip: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 24, maxWidth: "100%" },
+  accountDot: { width: 8, height: 8, borderRadius: 3 },
+  stack: { height: 12, borderRadius: 6, overflow: "hidden", flexDirection: "row" },
+  legend: { flexDirection: "row", flexWrap: "wrap", rowGap: 6, columnGap: 12 },
+  legendItem: { width: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 3 },
+  trackerRow: { gap: 8, minHeight: 44, justifyContent: "center" },
+  track: { height: 8, borderRadius: 4, overflow: "hidden" },
+  fill: { height: "100%", borderRadius: 4 },
+  list: { borderWidth: 1, borderRadius: 20, overflow: "hidden" },
+  cta: { marginTop: 14 },
 });

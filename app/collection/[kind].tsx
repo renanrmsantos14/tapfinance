@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "../../src/components/Text";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { ChevronDown, ChevronUp, Plus, X } from "lucide-react-native";
 import { useSQLiteContext } from "expo-sqlite";

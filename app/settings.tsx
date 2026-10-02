@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, Platform, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
+import { Text } from "../src/components/Text";
 import { ChevronRight, Download, ExternalLink, FileUp, Info, LockKeyhole, RotateCcw, Share2, ShieldCheck, Smartphone } from "lucide-react-native";
 import Constants from "expo-constants";
 import * as DocumentPicker from "expo-document-picker";
