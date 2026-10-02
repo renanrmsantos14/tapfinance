@@ -250,7 +250,7 @@ export async function archiveBudget(db: SQLiteDatabase, budgetId: string): Promi
   await db.runAsync("UPDATE budgets SET is_archived = 1, updated_at = ? WHERE id = ?", Date.now(), budgetId);
 }
 
-export type BudgetCategoryBreakdown = { id: string; name: string; amountCents: number; count: number; limitCents: number | null };
+export type BudgetCategoryBreakdown = { id: string; name: string; icon: string; amountCents: number; count: number; limitCents: number | null };
 
 export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: string, offset = 0): Promise<{ budget: Budget; categories: BudgetCategoryBreakdown[]; hasPrevious: boolean } | null> {
   const budget = (await listBudgets(db)).find((item) => item.id === budgetId);
@@ -269,7 +269,7 @@ export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: s
         OR EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ? AND bc.category_id = t.category_id))`,
     budget.currency, period.start, period.end, budgetId, budgetId);
   const categories = await db.getAllAsync<BudgetCategoryBreakdown>(`
-    SELECT c.id, c.name, SUM(t.amount_cents) AS amountCents, COUNT(*) AS count, bc.limit_cents AS limitCents
+    SELECT c.id, c.name, c.icon, SUM(t.amount_cents) AS amountCents, COUNT(*) AS count, bc.limit_cents AS limitCents
     FROM transactions t JOIN categories c ON c.id = t.category_id JOIN accounts a ON a.id = t.account_id
     LEFT JOIN budget_categories bc ON bc.budget_id = ? AND bc.category_id = c.id
     WHERE t.type = 'expense' AND t.kind = 'standard' AND t.status = 'paid'
@@ -279,8 +279,8 @@ export async function getBudgetCategoryBreakdown(db: SQLiteDatabase, budgetId: s
         OR EXISTS (SELECT 1 FROM budget_categories bc WHERE bc.budget_id = ? AND bc.category_id = t.category_id))
     GROUP BY c.id ORDER BY amountCents DESC`, budgetId, budget.currency, period.start, period.end, budgetId, budgetId);
   if (!Number.isSafeInteger(spent?.amountCents ?? 0) || categories.some((item) => !Number.isSafeInteger(item.amountCents))) throw new Error("Total do orçamento fora do limite numérico.");
-  const configured = await db.getAllAsync<{ id: string; name: string; limitCents: number | null }>(
-    "SELECT c.id, c.name, bc.limit_cents AS limitCents FROM budget_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.budget_id = ? ORDER BY c.position", budgetId,
+  const configured = await db.getAllAsync<{ id: string; name: string; icon: string; limitCents: number | null }>(
+    "SELECT c.id, c.name, c.icon, bc.limit_cents AS limitCents FROM budget_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.budget_id = ? ORDER BY c.position", budgetId,
   );
   const visible = [...categories];
   for (const category of configured) {

@@ -1,22 +1,24 @@
 import { useCallback, useRef, useState } from "react";
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Plus, X } from "lucide-react-native";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "../src/components/Text";
+import { Ellipsis, Plus, X } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { BottomNav } from "../src/components/BottomNav";
-import { EmptyState, PrimaryButton, QuietButton, Screen, SectionHeader, useReducedMotion } from "../src/components/ui";
+import { BentoGrid, Chip, EmptyState, Label, PrimaryButton, QuietButton, Ring, Screen, Tile, useReducedMotion } from "../src/components/ui";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { archiveBudget, createBudget, getBudgetConfiguration, listBudgets, updateBudget, type BudgetConfiguration } from "../src/repositories/financeRepository";
 import type { Budget, BudgetCycle } from "../src/types/finance";
 import { listCategories } from "../src/repositories/categoryRepository";
 import type { Category } from "../src/types/category";
-import { radius, useAppColors } from "../src/theme";
+import { manrope, radius, type, useAppColors } from "../src/theme";
 import { formatCentsByCurrency, parseCurrencyToCents } from "../src/utils/currency";
 import { formatDate, parseDateInput } from "../src/utils/dates";
 
 const cycles: { id: BudgetCycle; label: string }[] = [
   { id: "monthly", label: "Mensal" }, { id: "weekly", label: "Semanal" }, { id: "custom", label: "Período único" },
 ];
+const DAY = 86_400_000;
 
 export default function BudgetsScreen() {
   const db = useSQLiteContext(); const colors = useAppColors();
@@ -103,53 +105,88 @@ export default function BudgetsScreen() {
     ]);
   }
 
+  // Budgets may overlap in categories and periods, so the overview never sums spentCents across them.
+  const ranked = [...budgets].sort((a, b) => b.spentCents / Math.max(b.amountCents, 1) - a.spentCents / Math.max(a.amountCents, 1));
+  const focus = ranked[0];
+  const overCount = budgets.filter((budget) => budget.spentCents > budget.amountCents).length;
+  const now = Date.now();
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
         <View style={styles.header}>
-          <View style={{ flex: 1, minWidth: 0 }}><Text style={[styles.title, { color: colors.text }]}>Orçamentos</Text><Text style={[styles.subtitle, { color: colors.textMuted }]}>Limites e gastos do período</Text></View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Criar orçamento" onPress={openCreate} style={({ pressed }) => [styles.add, { backgroundColor: colors.surfaceStrong, transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }]}><Plus color={colors.text} size={22} /></Pressable>
+          <View style={{ flex: 1, minWidth: 0 }}><Text style={[type.metaStrong, { color: colors.textMuted }]}>{loading ? "Atualizando…" : `${budgets.length} ${budgets.length === 1 ? "ativo" : "ativos"}`}</Text><Text accessibilityRole="header" style={[type.h1, { color: colors.text }]}>Orçamentos</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Criar orçamento" onPress={openCreate} style={({ pressed }) => [styles.add, { backgroundColor: colors.accent, opacity: pressed ? 0.8 : 1, transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }]}><Plus color={colors.accentContrast} size={20} strokeWidth={2.6} /></Pressable>
         </View>
-        {loading ? <Text style={{ color: colors.textMuted, marginTop: 24 }}>Atualizando orçamentos…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : budgets.length === 0 ? (
-          <EmptyState embedded title="Seu primeiro orçamento" description="Defina um limite mensal ou semanal para acompanhar os gastos." actionLabel="Criar orçamento" onAction={openCreate} />
-        ) : <>
-          <SectionHeader title="Período atual" />
+        {loading ? <Text style={[type.body, { color: colors.textMuted, marginTop: 24 }]}>Atualizando orçamentos…</Text> : loadError ? <EmptyState title="Não foi possível carregar" description={loadError} actionLabel="Tentar novamente" onAction={() => { void load(); }} /> : budgets.length === 0 ? (
+          <EmptyState title="Seu primeiro orçamento" description="Defina um limite mensal ou semanal para acompanhar os gastos." actionLabel="Criar orçamento" onAction={openCreate} />
+        ) : <BentoGrid>
+          {focus && (() => {
+            const progress = focus.spentCents / Math.max(focus.amountCents, 1);
+            const over = progress > 1;
+            const daysLeft = focus.endAt && focus.endAt > now && focus.startAt <= now ? Math.max(1, Math.ceil((focus.endAt - now) / DAY)) : null;
+            return <Tile ink span onPress={() => router.push(`/budget/${focus.id}`)} accessibilityLabel={`Orçamento mais usado: ${focus.name}, ${Math.round(progress * 100)}%`} style={styles.totalTile}>
+              <Ring value={progress} size={104} stroke={10} label={`${Math.round(progress * 100)}%`} track="rgba(255,255,255,0.12)" textColor={colors.inkText} color={over ? colors.negative : colors.accent} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Label style={{ color: colors.inkMuted }}>{budgets.length > 1 ? "Mais usado" : "Este período"}</Label>
+                <Text numberOfLines={1} style={[type.stat, { color: colors.inkText, fontSize: 22 }]}>{focus.name}</Text>
+                <Text style={[type.metaStrong, { color: over ? colors.negative : colors.inkMuted }]}>{formatCentsByCurrency(focus.spentCents, focus.currency)} de {formatCentsByCurrency(focus.amountCents, focus.currency)} · {over ? `${formatCentsByCurrency(focus.spentCents - focus.amountCents, focus.currency)} acima` : `${formatCentsByCurrency(focus.amountCents - focus.spentCents, focus.currency)} restam`}</Text>
+                {budgets.length > 1 && <Text style={[type.meta, { color: colors.inkMuted }]}>{budgets.length} orçamentos · {overCount === 0 ? "nenhum estourado" : `${overCount} ${overCount === 1 ? "estourado" : "estourados"}`}</Text>}
+                {daysLeft !== null && !over && <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}><Text style={[type.metaStrong, { color: colors.accentText, fontSize: 11 }]}>{formatCentsByCurrency(Math.floor((focus.amountCents - focus.spentCents) / daysLeft), focus.currency)}/dia · faltam {daysLeft} dias</Text></View>}
+              </View>
+            </Tile>;
+          })()}
           {budgets.map((budget) => {
-            const progress = Math.min(budget.spentCents / Math.max(budget.amountCents, 1), 1);
+            const progress = budget.spentCents / Math.max(budget.amountCents, 1);
             const remaining = budget.amountCents - budget.spentCents;
-            const progressColor = remaining < 0 ? colors.negative : budget.color;
-            return <View key={budget.id} style={[styles.card, { borderColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={`Detalhes do orçamento ${budget.name}`} onPress={() => router.push(`/budget/${budget.id}`)} onLongPress={() => openActions(budget)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <View style={styles.cardTop}><View style={{ flex: 1, minWidth: 0 }}><Text style={[styles.cardName, { color: colors.text }]}>{budget.name}</Text><Text style={[styles.cycle, { color: colors.textMuted }]}>{budget.cycle === "monthly" ? "Este mês" : budget.cycle === "weekly" ? "Esta semana" : "Período personalizado"}</Text></View><Text style={[styles.percent, { color: remaining < 0 ? colors.negative : colors.text }]}>{Math.round(budget.spentCents / Math.max(budget.amountCents, 1) * 100)}%</Text></View>
-              <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: progressColor }]} /></View>
-              <View style={styles.amountRow}><Text style={[styles.amount, { color: colors.text }]}>{formatCentsByCurrency(budget.spentCents, budget.currency)} <Text style={[styles.muted, { color: colors.textMuted }]}>de {formatCentsByCurrency(budget.amountCents, budget.currency)}</Text></Text><Text style={[styles.remaining, { color: remaining < 0 ? colors.negative : colors.textMuted }]}>{remaining < 0 ? "Acima " : "Restam "}{formatCentsByCurrency(Math.abs(remaining), budget.currency)}</Text></View>
-            </Pressable><View style={styles.cardActions}><QuietButton accessibilityLabel={`Editar orçamento ${budget.name}`} onPress={() => { void openEdit(budget); }} style={styles.cardAction}><Text style={{ color: colors.accent, fontSize: 14, fontWeight: "600" }}>Editar</Text></QuietButton><QuietButton accessibilityLabel={`Arquivar orçamento ${budget.name}`} onPress={() => confirmArchive(budget)} style={styles.cardAction}><Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "600" }}>Arquivar</Text></QuietButton></View></View>;
+            const over = remaining < 0;
+            return <Tile key={budget.id} tone={over ? "negative" : undefined} onPress={() => router.push(`/budget/${budget.id}`)} accessibilityLabel={`Detalhes do orçamento ${budget.name}: ${Math.round(progress * 100)}%`} style={styles.budgetTile}>
+              <View style={styles.rowBetween}>
+                <Text numberOfLines={1} style={[type.bodyStrong, { color: colors.text, flex: 1 }]}>{budget.name}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Opções do orçamento ${budget.name}`} onPress={() => openActions(budget)} hitSlop={10} style={({ pressed }) => [styles.more, { opacity: pressed ? 0.5 : 1 }]}><Ellipsis color={colors.textMuted} size={18} /></Pressable>
+              </View>
+              <Text style={[type.stat, { color: over ? colors.negative : colors.text }]}>{Math.round(progress * 100)}%</Text>
+              <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}><View style={[styles.fill, { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: over ? colors.negative : colors.accent }]} /></View>
+              <Text numberOfLines={1} style={[type.meta, { color: over ? colors.negative : colors.textMuted, fontFamily: over ? manrope.bold : manrope.semibold }]}>{over ? `${formatCentsByCurrency(-remaining, budget.currency)} acima` : `${formatCentsByCurrency(remaining, budget.currency)} restam`}</Text>
+              <Text numberOfLines={1} style={[type.meta, { color: colors.textMuted }]}>{budget.cycle === "monthly" ? "Este mês" : budget.cycle === "weekly" ? "Esta semana" : "Período único"} · {formatCentsByCurrency(budget.amountCents, budget.currency)}</Text>
+            </Tile>;
           })}
-          <Pressable accessibilityRole="button" onPress={openCreate} style={({ pressed }) => [styles.newRow, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}><Plus color={colors.accent} size={18} /><Text style={[styles.newText, { color: colors.accent }]}>Adicionar orçamento</Text></Pressable>
-        </>}
+          <Tile onPress={openCreate} accessibilityLabel="Adicionar orçamento" style={[styles.budgetTile, styles.addTile, { borderColor: colors.textMuted }]}>
+            <View style={[styles.addIcon, { backgroundColor: colors.surfaceMuted }]}><Plus color={colors.textMuted} size={18} strokeWidth={2.6} /></View>
+            <Text style={[type.bodyStrong, { color: colors.textMuted }]}>Adicionar orçamento</Text>
+            <Text style={[type.meta, { color: colors.textMuted }]}>Por categoria ou geral.</Text>
+          </Tile>
+        </BentoGrid>}
       </Screen></ScrollView>
       <BottomNav />
       <Modal visible={modalOpen} animationType={reduceMotion === false ? "slide" : "none"} transparent onRequestClose={() => { if (!saving) setModalOpen(false); }}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}><ScrollView keyboardShouldPersistTaps="handled" style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={styles.sheetHeader}><Text accessibilityRole="header" style={[styles.sheetTitle, { color: colors.text }]}>{editing ? "Editar orçamento" : "Novo orçamento"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar" accessibilityState={{ disabled: saving }} disabled={saving} onPress={() => setModalOpen(false)} style={({ pressed }) => [styles.close, { opacity: saving ? 0.5 : pressed ? 0.6 : 1 }]}><X color={colors.textMuted} size={20} /></Pressable></View>
-          <Text style={[styles.label, { color: colors.textMuted }]}>NOME</Text>
-          <TextInput accessibilityLabel="Nome do orçamento" placeholder="Ex.: Gastos do mês" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} maxLength={50} />
-          <Text style={[styles.label, { color: colors.textMuted }]}>MOEDA</Text>
-          <TextInput accessibilityLabel="Código da moeda do orçamento" accessibilityHint={editing ? "A moeda fica preservada. Crie outro orçamento para usar outra moeda." : "Três letras, como BRL, USD ou EUR. Somente movimentos nessa moeda entram no orçamento."} editable={!editing && !saving} value={currency} onChangeText={(value) => setCurrency(value.toUpperCase())} autoCapitalize="characters" autoCorrect={false} maxLength={3} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
-          <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 6 }}>{editing ? "Moeda preservada. Para outra moeda, crie um novo orçamento." : "Use o código da moeda das suas contas. Valores com duas casas decimais; sem conversão cambial."}</Text>
-          <Text style={[styles.label, { color: colors.textMuted }]}>LIMITE</Text>
-          <CurrencyInput currency={currency} value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsByCurrency(cents, currency))} disabled={saving} />
-          <Text style={[styles.label, { color: colors.textMuted }]}>CICLO</Text>
-          <View style={styles.cycleRow}>{cycles.map((item) => <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ selected: cycle === item.id }} onPress={() => setCycle(item.id)} style={[styles.cycleOption, { borderColor: cycle === item.id ? colors.accent : colors.border, backgroundColor: cycle === item.id ? colors.accentSoft : colors.background }]}><Text style={[styles.cycleOptionText, { color: cycle === item.id ? colors.accent : colors.textMuted }]}>{item.label}</Text></Pressable>)}</View>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.scrim}><ScrollView keyboardShouldPersistTaps="handled" style={[styles.sheet, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 36 }}>
+          <View style={[styles.handle, { backgroundColor: colors.surfaceMuted }]} />
+          <View style={styles.sheetHeader}><Text accessibilityRole="header" style={[type.h1, { color: colors.text, fontSize: 20 }]}>{editing ? "Editar orçamento" : "Novo orçamento"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar" accessibilityState={{ disabled: saving }} disabled={saving} onPress={() => setModalOpen(false)} style={({ pressed }) => [styles.close, { backgroundColor: colors.surface, borderColor: colors.border, opacity: saving ? 0.5 : pressed ? 0.6 : 1 }]}><X color={colors.text} size={16} strokeWidth={2.4} /></Pressable></View>
+          <View style={[styles.field, { backgroundColor: colors.surface, borderColor: colors.border }]}><Label>Nome</Label>
+            <TextInput accessibilityLabel="Nome do orçamento" placeholder="Ex.: Gastos do mês" placeholderTextColor={colors.textMuted} value={name} onChangeText={setName} style={[styles.input, { color: colors.text }]} maxLength={50} /></View>
+          <View style={[styles.field, { backgroundColor: colors.surface, borderColor: colors.border }]}><Label>Moeda</Label>
+            <TextInput accessibilityLabel="Código da moeda do orçamento" accessibilityHint={editing ? "A moeda fica preservada. Crie outro orçamento para usar outra moeda." : "Três letras, como BRL, USD ou EUR. Somente movimentos nessa moeda entram no orçamento."} editable={!editing && !saving} value={currency} onChangeText={(value) => setCurrency(value.toUpperCase())} autoCapitalize="characters" maxLength={3} style={[styles.input, { color: colors.text, opacity: editing ? 0.6 : 1 }]} />
+            <Text style={[type.meta, { color: colors.textMuted }]}>{editing ? "Moeda preservada. Para outra moeda, crie um novo orçamento." : "Use o código da moeda das suas contas. Sem conversão cambial."}</Text></View>
+          <View style={[styles.field, { backgroundColor: colors.ink, borderColor: colors.ink }]}><Label style={{ color: colors.inkMuted }}>Limite</Label>
+            <CurrencyInput currency={currency} value={parseCurrencyToCents(amount) ?? 0} onChange={(cents) => setAmount(formatCentsByCurrency(cents, currency))} disabled={saving} inverted /></View>
+          <Label style={styles.sectionLabel}>Ciclo</Label>
+          <View style={styles.chipRow}>{cycles.map((item) => <Chip key={item.id} accessibilityRole="radio" label={item.label} selected={cycle === item.id} onPress={() => setCycle(item.id)} />)}</View>
           {cycle === "custom" && <View style={styles.dateRow}>
-            <View style={styles.dateField}><Text style={[styles.label, { color: colors.textMuted }]}>INÍCIO</Text><TextInput accessibilityLabel="Data inicial" value={startText} onChangeText={setStartText} placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={10} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} /></View>
-            <View style={styles.dateField}><Text style={[styles.label, { color: colors.textMuted }]}>FIM</Text><TextInput accessibilityLabel="Data final" value={endText} onChangeText={setEndText} placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={10} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} /></View>
+            <View style={[styles.field, styles.dateField, { backgroundColor: colors.surface, borderColor: colors.border }]}><Label>Início</Label><TextInput accessibilityLabel="Data inicial" value={startText} onChangeText={setStartText} placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={10} style={[styles.input, { color: colors.text }]} /></View>
+            <View style={[styles.field, styles.dateField, { backgroundColor: colors.surface, borderColor: colors.border }]}><Label>Fim</Label><TextInput accessibilityLabel="Data final" value={endText} onChangeText={setEndText} placeholder="DD/MM/AAAA" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={10} style={[styles.input, { color: colors.text }]} /></View>
           </View>}
-          <Text style={[styles.label, { color: colors.textMuted }]}>CATEGORIAS <Text style={styles.optionalLabel}>· opcional</Text></Text>
-          <View style={styles.categoryRow}>{categories.map((category) => {
+          <Label style={styles.sectionLabel}>Categorias <Text style={{ textTransform: "none", letterSpacing: 0, fontFamily: manrope.semibold }}>(opcional)</Text></Label>
+          <View style={styles.chipRow}>{categories.map((category) => {
             const selected = selectedCategories.includes(category.id);
-            return <View key={category.id}><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={() => setSelectedCategories((current) => selected ? current.filter((id) => id !== category.id) : [...current, category.id])} style={[styles.categoryOption, { backgroundColor: selected ? colors.accentSoft : colors.background, borderColor: selected ? colors.accent : colors.border }]}><Text style={{ color: selected ? colors.accent : colors.textMuted, fontSize: 12, fontWeight: "600" }}>{category.name}</Text></Pressable>{selected && <TextInput accessibilityLabel={`Limite de ${category.name}`} value={categoryLimits[category.id] ?? ""} onChangeText={(value) => changeCategoryLimit(category.id, value)} keyboardType="number-pad" placeholder="Sem limite" placeholderTextColor={colors.textMuted} style={[styles.categoryLimit, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />}</View>;
+            return <Chip key={category.id} accessibilityRole="checkbox" label={category.name} selected={selected} onPress={() => setSelectedCategories((current) => selected ? current.filter((id) => id !== category.id) : [...current, category.id])} />;
           })}</View>
-          {formError && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: colors.negative, marginTop: 16, lineHeight: 20 }}>{formError}</Text>}
+          {selectedCategories.length > 0 && <View style={styles.limits}>{selectedCategories.map((categoryId) => {
+            const category = categories.find((item) => item.id === categoryId);
+            if (!category) return null;
+            return <View key={categoryId} style={[styles.field, { backgroundColor: colors.surface, borderColor: colors.border }]}><Label>Limite · {category.name} <Text style={{ textTransform: "none", letterSpacing: 0, fontFamily: manrope.semibold }}>(opcional)</Text></Label><TextInput accessibilityLabel={`Limite da categoria ${category.name}`} value={categoryLimits[categoryId] ?? ""} onChangeText={(value) => changeCategoryLimit(categoryId, value)} placeholder="Sem limite próprio" placeholderTextColor={colors.textMuted} keyboardType="number-pad" style={[styles.input, { color: colors.text }]} /></View>;
+          })}</View>}
+          {formError && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[type.body, { color: colors.negative, marginTop: 16, lineHeight: 20 }]}>{formError}</Text>}
           <PrimaryButton disabled={saving} onPress={() => void save()} style={styles.save}>{saving ? "Salvando…" : editing ? "Salvar alterações" : "Salvar orçamento"}</PrimaryButton>
         </ScrollView></KeyboardAvoidingView>
       </Modal>
@@ -158,14 +195,19 @@ export default function BudgetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, scroll: { flexGrow: 1, paddingBottom: 22 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 24 },
-  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.7 }, subtitle: { fontSize: 13, marginTop: 5 },
-  add: { width: 48, height: 48, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  card: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 18, marginTop: 8 }, cardTop: { flexDirection: "row", alignItems: "center", gap: 12 }, cardName: { fontSize: 17, fontWeight: "600" }, cycle: { fontSize: 13, marginTop: 4 }, percent: { fontSize: 18, fontWeight: "600", fontVariant: ["tabular-nums"] }, cardActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 8 }, cardAction: { paddingHorizontal: 12 },
-  track: { height: 5, borderRadius: 3, overflow: "hidden", marginTop: 16 }, fill: { height: "100%", borderRadius: 3 }, amountRow: { gap: 6, marginTop: 12 }, amount: { fontSize: 15, fontWeight: "600", fontVariant: ["tabular-nums"] }, muted: { fontWeight: "400" }, remaining: { fontSize: 13 },
-  newRow: { minHeight: 54, borderRadius: radius.sm, marginTop: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, newText: { fontSize: 14, fontWeight: "600" },
-  scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.58)", justifyContent: "flex-end" }, sheet: { maxHeight: "92%", borderTopWidth: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 }, sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 22 }, sheetTitle: { flex: 1, fontSize: 20, fontWeight: "600" }, close: { width: 48, height: 48, alignItems: "center", justifyContent: "center" }, label: { fontSize: 12, fontWeight: "600", letterSpacing: 0.5, marginTop: 12, marginBottom: 8 }, input: { minHeight: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16 },
-  cycleRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, cycleOption: { flexGrow: 1, flexBasis: 90, minHeight: 48, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 8 }, cycleOptionText: { fontSize: 13, fontWeight: "600", textAlign: "center" }, save: { marginTop: 24 },
-  dateRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, dateField: { flexGrow: 1, flexBasis: 130 }, optionalLabel: { fontWeight: "400", letterSpacing: 0 }, categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, categoryOption: { minHeight: 48, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 8, alignItems: "center", justifyContent: "center" }, categoryLimit: { minHeight: 48, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginTop: 5, minWidth: 112 },
+  root: { flex: 1 }, scroll: { flexGrow: 1, paddingBottom: 12 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 16, paddingHorizontal: 4 },
+  add: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  totalTile: { flexDirection: "row", alignItems: "center", gap: 18, padding: 18 },
+  badge: { alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, marginTop: 4 },
+  budgetTile: { width: "48%", flexGrow: 1, gap: 8 }, more: { width: 28, height: 28, alignItems: "center", justifyContent: "center", marginRight: -6, marginTop: -4 },
+  track: { height: 6, borderRadius: 3, overflow: "hidden" }, fill: { height: "100%", borderRadius: 3 },
+  addTile: { borderStyle: "dashed", backgroundColor: "transparent", justifyContent: "center" }, addIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  scrim: { flex: 1, backgroundColor: "rgba(8,10,16,0.55)", justifyContent: "flex-end" }, sheet: { maxHeight: "92%", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 10 },
+  handle: { width: 40, height: 5, borderRadius: 3, alignSelf: "center", marginBottom: 10 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, paddingHorizontal: 4 }, close: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  field: { borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 14, paddingVertical: 12, gap: 6, marginTop: 10 }, input: { minHeight: 28, padding: 0, fontFamily: manrope.bold, fontSize: 15 },
+  sectionLabel: { marginTop: 18, marginBottom: 8, paddingHorizontal: 4 }, chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  dateRow: { flexDirection: "row", gap: 10 }, dateField: { flex: 1 }, limits: { gap: 0 }, save: { marginTop: 24 },
 });

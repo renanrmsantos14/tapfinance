@@ -1,4 +1,5 @@
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
+import { Text } from "./Text";
 import { router } from "expo-router";
 import { EmptyState } from "./ui";
 import { useAppColors } from "../theme";

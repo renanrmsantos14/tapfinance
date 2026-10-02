@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { formatInputCents, parseCurrencyToCents } from "../utils/currency";
-import { useAppColors } from "../theme";
+import { manrope, useAppColors } from "../theme";
 
-export function CurrencyInput({ value, onChange, autoFocus = false, accessibilityLabel = "Valor", currency = "BRL", disabled = false }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean; accessibilityLabel?: string; currency?: string; disabled?: boolean }) {
+export function CurrencyInput({ value, onChange, autoFocus = false, accessibilityLabel = "Valor", currency = "BRL", disabled = false, inverted = false }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean; accessibilityLabel?: string; currency?: string; disabled?: boolean; inverted?: boolean }) {
   const colors = useAppColors();
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
@@ -34,9 +34,9 @@ export function CurrencyInput({ value, onChange, autoFocus = false, accessibilit
       }}
       selectTextOnFocus={false}
       placeholder={formatInputCents(0, currency)}
-      placeholderTextColor={colors.textMuted}
-      textAlign="center"
-      style={[styles.input, { color: colors.text, opacity: disabled ? 0.5 : 1, borderBottomColor: focused && !disabled ? colors.accent : colors.border }]}
+      placeholderTextColor={inverted ? colors.inkMuted : colors.textMuted}
+      textAlign={inverted ? "left" : "center"}
+      style={[styles.input, inverted ? styles.inverted : styles.underlined, { color: inverted ? colors.inkText : colors.text, opacity: disabled ? 0.5 : 1, borderBottomColor: inverted ? "transparent" : focused && !disabled ? colors.accent : colors.border }]}
       maxLength={18}
       returnKeyType="done"
     />
@@ -47,13 +47,10 @@ const styles = StyleSheet.create({
   input: {
     alignSelf: "stretch",
     minWidth: 0,
-    minHeight: 68,
-    fontSize: 34,
-    fontWeight: "600",
+    fontFamily: manrope.extrabold,
     fontVariant: ["tabular-nums"],
-    letterSpacing: -0.7,
-    borderBottomWidth: 1,
     paddingHorizontal: 0,
-    paddingVertical: 8,
   },
+  underlined: { minHeight: 68, fontSize: 34, letterSpacing: -0.7, borderBottomWidth: 1, paddingVertical: 8 },
+  inverted: { minHeight: 60, fontSize: 44, letterSpacing: -1.6, paddingVertical: 0 },
 });

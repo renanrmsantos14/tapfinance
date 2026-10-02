@@ -1,4 +1,5 @@
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "./Text";
 import { Check, X } from "lucide-react-native";
 import { PrimaryButton, useReducedMotion } from "./ui";
 import { radius, useAppColors } from "../theme";
