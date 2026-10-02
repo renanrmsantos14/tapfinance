@@ -1,10 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { ArrowDownUp, ArrowLeft, Check } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { AccountSelector } from "../src/components/AccountSelector";
-import { EmptyState, Label, PrimaryButton, QuietButton, Screen } from "../src/components/ui";
+import { EmptyState, FormHeader, Label, PrimaryButton, Screen } from "../src/components/ui";
 import { CurrencyInput } from "../src/components/CurrencyInput";
 import { createTransfer, listAccounts } from "../src/repositories/financeRepository";
 import type { Account } from "../src/types/finance";
@@ -40,17 +40,17 @@ export default function TransferScreen() {
     finally { savingRef.current = false; setSaving(false); }
   }
   return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}><Screen scroll={false}>
-    <View style={styles.top}><QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton><Text style={[styles.title, { color: colors.text }]}>Transferir</Text><View style={{ width: 44 }} /></View>
+    <FormHeader title="Transferir" onBack={() => router.back()} disabled={saving} />
     {loading && <View accessibilityLiveRegion="polite" style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={{ color: colors.textMuted }}>Carregando contas…</Text></View>}
     {!loading && loadError && <EmptyState title="Não foi possível carregar as contas" description={`${loadError} Seus campos permanecem preenchidos.`} actionLabel="Tentar novamente" onAction={() => { setLoading(true); setRevision((value) => value + 1); }} />}
     {!loading && !loadError && (!source || targets.length === 0) && <EmptyState title="São necessárias duas contas da mesma moeda" description="Cadastre outra conta ativa ou escolha uma origem com destino disponível. Conversão entre moedas não é suportada." actionLabel="Gerenciar contas" onAction={() => router.push("/collection/accounts")} />}
-    <View style={[styles.hero, { backgroundColor: colors.surface }]}><View style={[styles.heroIcon, { backgroundColor: colors.accentSoft }]}><ArrowDownUp color={colors.accent} size={22} /></View><Text style={[styles.amountHint, { color: colors.textMuted }]}>VALOR DA TRANSFERÊNCIA</Text><CurrencyInput currency={source?.currency} accessibilityLabel="Valor da transferência" value={amountCents} onChange={setAmountCents} /></View>
-    <View style={styles.section}><Label>De qual conta?</Label><AccountSelector accounts={accounts} selectedId={fromId} onSelect={(id) => setSelection((current) => resolveTransferSelection(accounts, { ...current, fromId: id }))} /></View>
-    <View style={styles.section}><Label>Para qual conta?</Label><AccountSelector accounts={targets} selectedId={toId} onSelect={(id) => setSelection((current) => ({ ...current, toId: id }))} /></View>
-    <View style={styles.section}><Label>Descrição <Text style={styles.optional}>(opcional)</Text></Label><TextInput accessibilityLabel="Descrição da transferência" placeholder="Ex.: Reserva mensal" placeholderTextColor={colors.textMuted} value={title} onChangeText={setTitle} maxLength={60} style={[styles.titleInput, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} /></View>
+    <View style={styles.amount}><Label>Valor da transferência</Label><CurrencyInput currency={source?.currency} accessibilityLabel="Valor da transferência" value={amountCents} onChange={setAmountCents} disabled={saving} /></View>
+    <View style={styles.section}><Label>De qual conta?</Label><AccountSelector accounts={accounts} selectedId={fromId} disabled={saving || loading || !!loadError} onSelect={(id) => setSelection((current) => resolveTransferSelection(accounts, { ...current, fromId: id }))} /></View>
+    <View style={styles.section}><Label>Para qual conta?</Label><AccountSelector accounts={targets} selectedId={toId} disabled={saving || loading || !!loadError} onSelect={(id) => setSelection((current) => ({ ...current, toId: id }))} /></View>
+    <View style={styles.section}><Label>Descrição <Text style={styles.optional}>(opcional)</Text></Label><TextInput accessibilityLabel="Descrição da transferência" editable={!saving} accessibilityState={{ disabled: saving }} placeholder="Ex.: Reserva mensal" placeholderTextColor={colors.textMuted} value={title} onChangeText={setTitle} maxLength={60} style={[styles.titleInput, { opacity: saving ? 0.5 : 1, color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} /></View>
     <Text style={[styles.note, { color: colors.textMuted }]}>A transferência cria duas movimentações vinculadas e não altera receitas ou despesas.</Text>
     <PrimaryButton disabled={saving || !canSave} onPress={() => void save()} style={styles.save}>{saving ? <ActivityIndicator color={colors.background} /> : <Check color={colors.background} size={18} />}{saving ? "Transferindo…" : "Confirmar transferência"}</PrimaryButton>
   </Screen></ScrollView></KeyboardAvoidingView>;
 }
 
-const styles = StyleSheet.create({ root: { flex: 1 }, scroll: { flexGrow: 1, paddingBottom: 30 }, top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 25 }, loading: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }, title: { fontSize: 18, fontWeight: "700" }, hero: { minHeight: 205, borderRadius: 20, alignItems: "center", justifyContent: "center", padding: 20 }, heroIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 16 }, amountHint: { fontSize: 10, fontWeight: "700", letterSpacing: 1 }, section: { marginTop: 25, gap: 10 }, optional: { textTransform: "none", letterSpacing: 0, fontWeight: "500" }, titleInput: { minHeight: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, fontSize: 15 }, note: { fontSize: 12, lineHeight: 18, marginTop: 20, textAlign: "center" }, save: { marginTop: 24 } });
+const styles = StyleSheet.create({ root: { flex: 1 }, scroll: { flexGrow: 1, paddingBottom: 30 }, loading: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }, amount: { paddingVertical: 16, gap: 8, alignItems: "center" }, section: { marginTop: 24, gap: 10 }, optional: { textTransform: "none", letterSpacing: 0, fontWeight: "400" }, titleInput: { minHeight: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 }, note: { fontSize: 13, lineHeight: 20, marginTop: 20 }, save: { marginTop: 24 } });

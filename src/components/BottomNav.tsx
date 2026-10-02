@@ -3,6 +3,7 @@ import { ChartNoAxesCombined, Clock3, Ellipsis, PieChart } from "lucide-react-na
 import { router, usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { radius, useAppColors } from "../theme";
+import { navigationSection } from "../utils/navigation";
 
 const items = [
   { path: "/", label: "Início", Icon: ChartNoAxesCombined },
@@ -18,10 +19,10 @@ export function BottomNav() {
   return (
     <View style={[styles.bar, { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 8) }]}>
       {items.map(({ path, label, Icon }) => {
-        const active = path === "/" ? pathname === "/" : pathname === path || (path === "/more" && pathname === "/settings");
+        const active = navigationSection(pathname) === path;
         return (
-          <Pressable key={path} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={() => router.replace(path as "/") } style={({ pressed }) => [styles.item, { opacity: pressed ? 0.65 : 1 }]}>
-            <View style={[styles.iconWrap, active && { backgroundColor: colors.accentSoft }]}><Icon color={active ? colors.accent : colors.textMuted} size={20} strokeWidth={active ? 2.5 : 2} /></View>
+          <Pressable key={path} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={() => { if (pathname !== path) router.replace(path as "/"); }} style={({ pressed }) => [styles.item, { backgroundColor: pressed ? colors.surfaceMuted : "transparent" }]}>
+            <View style={[styles.iconWrap, active && { backgroundColor: colors.accentSoft }]}><Icon color={active ? colors.accent : colors.textMuted} size={22} strokeWidth={2} /></View>
             <Text style={[styles.label, { color: active ? colors.accent : colors.textMuted }]}>{label}</Text>
           </Pressable>
         );
@@ -32,7 +33,7 @@ export function BottomNav() {
 
 const styles = StyleSheet.create({
   bar: { minHeight: 70, borderTopWidth: 1, flexDirection: "row", justifyContent: "space-around", paddingTop: 8 },
-  item: { minWidth: 88, minHeight: 52, alignItems: "center", justifyContent: "center", gap: 2 },
-  iconWrap: { width: 42, height: 28, borderRadius: radius.round, alignItems: "center", justifyContent: "center" },
-  label: { fontSize: 11, fontWeight: "600" },
+  item: { flex: 1, minWidth: 0, minHeight: 52, paddingHorizontal: 2, alignItems: "center", justifyContent: "center", gap: 4 },
+  iconWrap: { width: 40, height: 28, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  label: { fontSize: 12, fontWeight: "600", textAlign: "center" },
 });

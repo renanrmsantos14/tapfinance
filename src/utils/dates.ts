@@ -48,8 +48,8 @@ export function replaceDateAndTime(timestamp: number, dateText: string, timeText
   return date.getTime();
 }
 
-export function formatMonthLabel(timestamp: number): string {
-  return new Intl.DateTimeFormat("pt-BR", { month: "long" })
+export function formatMonthLabel(timestamp: number, includeYear = false): string {
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", ...(includeYear ? { year: "numeric" as const } : {}) })
     .format(new Date(timestamp))
     .toUpperCase();
 }

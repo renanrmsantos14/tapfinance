@@ -13,4 +13,4 @@ export function TransactionStatusSelector({ type, status, onChange, disabled = f
   })}</View><Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18 }}>{status === "pending" ? "Pendente: não altera o saldo da conta até você marcar como pago ou recebido." : "Confirmado: este valor entra no saldo da conta."}</Text></View>;
 }
 
-const styles = StyleSheet.create({ root: { gap: 8, marginTop: 22 }, row: { flexDirection: "row", gap: 10 }, option: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 10 } });
+const styles = StyleSheet.create({ root: { gap: 8, marginTop: 22 }, row: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, option: { flexGrow: 1, flexBasis: 110, minHeight: 48, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 10 } });

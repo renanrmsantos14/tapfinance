@@ -19,7 +19,7 @@ const iconMap: Record<string, LucideIcon> = {
   tag: require("lucide-react-native").Tag,
 };
 
-export function CategorySelector({ categories, selectedId, onSelect }: { categories: Category[]; selectedId: string | null; onSelect: (id: string) => void }) {
+export function CategorySelector({ categories, selectedId, onSelect, disabled = false }: { categories: Category[]; selectedId: string | null; onSelect: (id: string) => void; disabled?: boolean }) {
   const colors = useAppColors();
   const reduceMotion = useReducedMotion();
   return (
@@ -30,11 +30,12 @@ export function CategorySelector({ categories, selectedId, onSelect }: { categor
         return (
           <Pressable
             key={category.id}
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
+            accessibilityRole="radio"
+            disabled={disabled}
+            accessibilityState={{ selected, disabled }}
             accessibilityLabel={`Categoria ${category.name}${category.isActive ? "" : ", arquivada do lançamento original"}`}
             onPress={() => onSelect(category.id)}
-            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: pressed ? 0.74 : 1, transform: [{ scale: pressed && reduceMotion === false ? 0.97 : 1 }] }]}
+            style={({ pressed }) => [styles.item, { backgroundColor: selected ? colors.accentSoft : colors.surface, borderColor: selected ? colors.accent : colors.border, opacity: disabled ? 0.5 : pressed ? 0.74 : 1, transform: [{ scale: pressed && reduceMotion === false ? 0.97 : 1 }] }]}
           >
             <Icon color={selected ? colors.accent : colors.textMuted} size={18} strokeWidth={2} />
             <Text style={[styles.text, { color: selected ? colors.accent : colors.text }]}>{category.name}{!category.isActive && " · Arquivada"}</Text>
@@ -47,6 +48,6 @@ export function CategorySelector({ categories, selectedId, onSelect }: { categor
 
 const styles = StyleSheet.create({
   content: { gap: 8, paddingVertical: 4, paddingRight: 20 },
-  item: { minHeight: 46, borderWidth: 1, borderRadius: radius.md, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14 },
-  text: { fontSize: 14, fontWeight: "600" },
+  item: { minHeight: 48, maxWidth: 240, borderWidth: 1, borderRadius: radius.sm, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  text: { flexShrink: 1, fontSize: 14, fontWeight: "600" },
 });

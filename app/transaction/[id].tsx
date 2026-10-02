@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { ArrowLeft, Check, Trash2 } from "lucide-react-native";
+import { Check, Trash2 } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Haptics from "expo-haptics";
@@ -11,7 +11,7 @@ import { TransactionFormReferenceStatus } from "../../src/components/Transaction
 import { TransactionMetadataFields } from "../../src/components/TransactionMetadataFields";
 import { OptionalReferenceSelector } from "../../src/components/OptionalReferenceSelector";
 import { normalizeTransactionTags } from "../../src/utils/transactionTags";
-import { EmptyState, Label, PrimaryButton, QuietButton, Screen, SkeletonRows } from "../../src/components/ui";
+import { EmptyState, FormHeader, Label, PrimaryButton, QuietButton, Screen, SkeletonRows } from "../../src/components/ui";
 import { createTransaction, deleteTransaction, getTransaction, updateTransaction } from "../../src/repositories/transactionRepository";
 import type { TransactionType } from "../../src/types/category";
 import type { Transaction } from "../../src/types/transaction";
@@ -153,16 +153,15 @@ export default function TransactionDetailScreen() {
 
   if (transaction.kind !== "standard") {
     return <View style={[styles.root, { backgroundColor: colors.background }]}><ScrollView contentContainerStyle={styles.scroll}><Screen scroll={false}>
-      <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
-      <Text style={[styles.specialTitle, { color: colors.text }]}>{transaction.kind === "transfer" ? "Transferência" : "Correção de saldo"}</Text>
-      <View style={[styles.specialCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <FormHeader title={transaction.kind === "transfer" ? "Transferência" : "Correção de saldo"} onBack={() => router.back()} disabled={saving} />
+      <View style={styles.specialCard}>
         <Text style={[styles.specialAmount, { color: colors.text }]}>{formatCentsByCurrency(transaction.amountCents, transaction.accountCurrency)}</Text>
         <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{transaction.type === "expense" ? "Saída" : "Entrada"} · {transaction.accountName}</Text>
         <Text style={[styles.specialMeta, { color: colors.textMuted }]}>{formatDate(transaction.occurredAt)}{transaction.title ? ` · ${transaction.title}` : ""}</Text>
       </View>
       {transaction.notes && <Text style={[styles.specialNote, { color: colors.textMuted }]}>{transaction.notes}</Text>}
       <Text style={[styles.specialNote, { color: colors.textMuted }]}>{transaction.kind === "transfer" ? "Esta movimentação faz parte de um par. Ao excluir, as duas partes são removidas juntas." : "Esta correção altera somente o saldo da conta, não receitas ou despesas. Excluí-la reverte seu efeito no saldo; não é possível convertê-la em lançamento comum."}</Text>
-      <Pressable accessibilityRole="button" disabled={saving} accessibilityState={{ disabled: saving }} onPress={confirmDelete} style={[styles.deleteButton, { opacity: saving ? 0.45 : 1 }]}><Trash2 color={colors.negative} size={17} /><Text style={[styles.deleteText, { color: colors.negative }]}>{saving ? "Excluindo…" : transaction.kind === "transfer" ? "Excluir transferência" : "Excluir correção"}</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={saving} accessibilityState={{ disabled: saving }} onPress={confirmDelete} style={({ pressed }) => [styles.deleteButton, { opacity: saving ? 0.45 : pressed ? 0.65 : 1 }]}><Trash2 color={colors.negative} size={17} /><Text style={[styles.deleteText, { color: colors.negative }]}>{saving ? "Excluindo…" : transaction.kind === "transfer" ? "Excluir transferência" : "Excluir correção"}</Text></Pressable>
     </Screen></ScrollView></View>;
   }
 
@@ -170,11 +169,7 @@ export default function TransactionDetailScreen() {
     <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
         <Screen scroll={false}>
-          <View style={styles.top}>
-            <QuietButton accessibilityLabel="Voltar" onPress={() => router.back()}><ArrowLeft color={colors.text} size={21} /></QuietButton>
-            <View style={styles.topCopy}><Text style={[styles.topTitle, { color: colors.text }]}>{duplicateMode ? "Duplicar lançamento" : "Editar lançamento"}</Text><Text style={[styles.topSubtitle, { color: colors.textMuted }]}>{duplicateMode ? "Revise antes de criar a cópia" : "Ajuste os detalhes abaixo"}</Text></View>
-            <View style={styles.topSpacer} accessibilityElementsHidden />
-          </View>
+          <FormHeader title={duplicateMode ? "Duplicar lançamento" : "Editar lançamento"} subtitle={duplicateMode ? "Revise antes de criar a cópia" : undefined} onBack={() => router.back()} disabled={saving} />
 
           <TransactionFormReferenceStatus loading={references.loading} error={references.error} onRetry={references.retry} missingAccount={references.ready && accounts.length === 0} missingCategory={references.ready && categories.length === 0} />
 
@@ -193,20 +188,20 @@ export default function TransactionDetailScreen() {
             })}
           </View>
 
-          <View style={[styles.amountCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.amountCard}>
             <Label>Valor</Label>
-            <CurrencyInput currency={accounts.find((account) => account.id === accountId)?.currency ?? transaction.accountCurrency} value={amountCents} onChange={setAmountCents} />
+            <CurrencyInput currency={accounts.find((account) => account.id === accountId)?.currency ?? transaction.accountCurrency} value={amountCents} onChange={setAmountCents} disabled={saving} />
           </View>
 
           <TransactionStatusSelector type={type} status={status} onChange={setStatus} disabled={saving || initialDisbursement} />
 
           <TransactionDateTimeFields date={occurredAtText} time={occurredTimeText} onDateChange={setOccurredAtText} onTimeChange={setOccurredTimeText} disabled={saving} />
 
-          <View style={styles.section}><Label>Categoria</Label><CategorySelector categories={categories} selectedId={categoryId} onSelect={setCategoryId} /></View>
-          <View style={styles.section}><Label>Conta</Label><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} /></View>
+          <View style={styles.section}><Label>Categoria</Label><CategorySelector categories={categories} selectedId={categoryId} onSelect={setCategoryId} disabled={saving || !references.ready} /></View>
+          <View style={styles.section}><Label>Conta</Label><AccountSelector accounts={accounts} selectedId={accountId} onSelect={setAccountId} disabled={saving || !references.ready} /></View>
           <View style={styles.section}>
             <Label>Descrição <Text style={styles.optional}>(opcional)</Text></Label>
-            <TextInput accessibilityLabel="Descrição" value={description} onChangeText={setDescription} maxLength={80} placeholder="Adicione uma nota" placeholderTextColor={colors.textMuted} style={[styles.input, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} />
+            <TextInput accessibilityLabel="Descrição" accessibilityState={{ disabled: saving }} editable={!saving} value={description} onChangeText={setDescription} maxLength={80} placeholder="Adicione uma nota" placeholderTextColor={colors.textMuted} style={[styles.input, { opacity: saving ? 0.5 : 1, color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]} />
           </View>
 
           <TransactionMetadataFields title={title} notes={notes} tags={tags} tagInput={tagInput} disabled={saving} onTitleChange={setTitle} onNotesChange={setNotes} onTagsChange={(value) => { tagsEdited.current = true; setTags(value); }} onTagInputChange={setTagInput} />
@@ -232,20 +227,15 @@ const styles = StyleSheet.create({
   loadingInner: { paddingHorizontal: 28 },
   errorInner: { paddingHorizontal: 20 },
   scroll: { paddingBottom: 36 },
-  top: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
-  topCopy: { flex: 1, alignItems: "center" },
-  topSpacer: { width: 44, height: 44 },
-  topTitle: { fontSize: 17, fontWeight: "700" },
-  topSubtitle: { fontSize: 12, marginTop: 3 },
   typeSwitch: { flexDirection: "row", borderRadius: radius.md, padding: 4, marginBottom: 16 },
-  typeButton: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  typeButton: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", paddingVertical: 8 },
   typeText: { fontSize: 14, fontWeight: "700" },
-  amountCard: { borderWidth: 1, borderRadius: radius.lg, padding: 18, alignItems: "center" },
+  amountCard: { paddingVertical: 16, alignItems: "center", gap: 8 },
   section: { marginTop: 24, gap: 10 },
   optional: { textTransform: "none", letterSpacing: 0, fontWeight: "500" },
   input: { minHeight: 54, borderWidth: 1, borderRadius: radius.md, fontSize: 15, paddingHorizontal: 14 },
   save: { marginTop: 30 },
   deleteButton: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 },
   deleteText: { fontSize: 13, fontWeight: "700" },
-  specialTitle: { fontSize: 28, fontWeight: "800", marginTop: 25 }, specialCard: { borderWidth: 1, borderRadius: radius.lg, padding: 20, marginTop: 18 }, specialAmount: { fontSize: 30, fontWeight: "800" }, specialMeta: { fontSize: 13, marginTop: 9 }, specialNote: { fontSize: 12, lineHeight: 18, marginTop: 16 },
+  specialCard: { paddingVertical: 20 }, specialAmount: { fontSize: 32, fontWeight: "600", fontVariant: ["tabular-nums"] }, specialMeta: { fontSize: 14, lineHeight: 20, marginTop: 9 }, specialNote: { fontSize: 13, lineHeight: 20, marginTop: 16 },
 });

@@ -1,23 +1,32 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { formatInputCents, parseCurrencyToCents } from "../utils/currency";
 import { useAppColors } from "../theme";
 
-export function CurrencyInput({ value, onChange, autoFocus = false, accessibilityLabel = "Valor", currency = "BRL" }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean; accessibilityLabel?: string; currency?: string }) {
+export function CurrencyInput({ value, onChange, autoFocus = false, accessibilityLabel = "Valor", currency = "BRL", disabled = false }: { value: number; onChange: (cents: number) => void; autoFocus?: boolean; accessibilityLabel?: string; currency?: string; disabled?: boolean }) {
   const colors = useAppColors();
   const ref = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
+  useEffect(() => {
+    if (disabled) ref.current?.blur();
+  }, [disabled]);
 
   return (
     <TextInput
       ref={ref}
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      editable={!disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       autoFocus={autoFocus}
       keyboardType="number-pad"
       value={formatInputCents(value, currency)}
       onChangeText={(text) => {
+        if (disabled) return;
         const digits = text.replace(/\D/g, "");
         if (!digits) { onChange(0); return; }
         const parsed = parseCurrencyToCents(digits);
@@ -27,7 +36,7 @@ export function CurrencyInput({ value, onChange, autoFocus = false, accessibilit
       placeholder={formatInputCents(0, currency)}
       placeholderTextColor={colors.textMuted}
       textAlign="center"
-      style={[styles.input, { color: colors.text }]}
+      style={[styles.input, { color: colors.text, opacity: disabled ? 0.5 : 1, borderBottomColor: focused && !disabled ? colors.accent : colors.border }]}
       maxLength={18}
       returnKeyType="done"
     />
@@ -39,9 +48,11 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     minWidth: 0,
     minHeight: 68,
-    fontSize: 42,
-    fontWeight: "700",
-    letterSpacing: -1.7,
+    fontSize: 34,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.7,
+    borderBottomWidth: 1,
     paddingHorizontal: 0,
     paddingVertical: 8,
   },

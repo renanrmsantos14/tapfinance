@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
+import { Children, useEffect, useState, type ReactNode } from "react";
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowRight, Inbox } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Inbox } from "lucide-react-native";
 import { radius, useAppColors } from "../theme";
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
@@ -19,9 +19,16 @@ export function Label({ children }: { children: ReactNode }) {
 export function useReducedMotion(): boolean | null {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setEnabled);
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setEnabled);
-    return () => subscription.remove();
+    let mounted = true;
+    let changed = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (mounted && !changed) setEnabled(value);
+    }).catch(() => { if (mounted && !changed) setEnabled(true); });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", (value) => {
+      changed = true;
+      if (mounted) setEnabled(value);
+    });
+    return () => { mounted = false; subscription.remove(); };
   }, []);
   return enabled;
 }
@@ -38,40 +45,41 @@ export function PrimaryButton({ children, style, onPress, disabled, accessibilit
       disabled={disabled}
       onPress={onPress}
     >
-      <Text style={[styles.primaryButtonText, { color: colors.background }]}>{children}</Text>
+      {Children.toArray(children).map((child, index) => typeof child === "string" || typeof child === "number"
+        ? <Text key={index} style={[styles.primaryButtonText, { color: colors.background }]}>{child}</Text>
+        : child)}
     </Pressable>
   );
 }
 
-export function QuietButton({ children, onPress, style, accessibilityLabel }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
+export function QuietButton({ children, onPress, style, accessibilityLabel, disabled = false }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; accessibilityLabel?: string; disabled?: boolean }) {
   const colors = useAppColors();
   const reduceMotion = useReducedMotion();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.quietButton, { backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }, style]}
+      style={({ pressed }) => [styles.quietButton, { opacity: disabled ? 0.5 : 1, backgroundColor: pressed ? colors.surfaceMuted : "transparent", transform: [{ scale: pressed && reduceMotion === false ? 0.96 : 1 }] }, style]}
     >
       {children}
     </Pressable>
   );
 }
 
-export function Reveal({ children, delay = 0, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(8)).current;
-  const reduceMotion = useReducedMotion();
+export function Reveal({ children, style }: { children: ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
+  // Financial data stays visible immediately, without decorative entrance delays.
+  return <View style={style}>{children}</View>;
+}
 
-  useEffect(() => {
-    if (reduceMotion === null) return;
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: reduceMotion ? 160 : 220, delay, easing: Easing.bezier(0.23, 1, 0.32, 1), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: reduceMotion ? 0 : 220, delay, easing: Easing.bezier(0.23, 1, 0.32, 1), useNativeDriver: true }),
-    ]).start();
-  }, [delay, opacity, reduceMotion, translateY]);
-
-  return <Animated.View style={[style, { opacity, transform: [{ translateY }] }]}>{children}</Animated.View>;
+export function FormHeader({ title, subtitle, onBack, disabled = false }: { title: string; subtitle?: string; onBack: () => void; disabled?: boolean }) {
+  const colors = useAppColors();
+  return <View style={styles.formHeader}>
+    <QuietButton accessibilityLabel="Voltar" onPress={onBack} disabled={disabled}><ArrowLeft color={colors.text} size={22} /></QuietButton>
+    <View style={styles.formHeaderCopy}><Text accessibilityRole="header" style={[styles.formHeaderTitle, { color: colors.text }]}>{title}</Text>{subtitle && <Text style={[styles.formHeaderSubtitle, { color: colors.textMuted }]}>{subtitle}</Text>}</View>
+  </View>;
 }
 
 export function SectionHeader({ title, actionLabel, onAction }: { title: string; actionLabel?: string; onAction?: () => void }) {
@@ -109,13 +117,17 @@ export function SkeletonRows({ count = 3 }: { count?: number }) {
 export const styles = StyleSheet.create({
   flex: { flex: 1 },
   screen: { flex: 1, paddingHorizontal: 20 },
+  formHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 24 },
+  formHeaderCopy: { flex: 1, minWidth: 0, gap: 4 },
+  formHeaderTitle: { fontSize: 20, fontWeight: "600", letterSpacing: -0.3 },
+  formHeaderSubtitle: { fontSize: 13, lineHeight: 18 },
   label: { fontSize: 12, fontWeight: "600", letterSpacing: 1.1, textTransform: "uppercase" },
   primaryButton: { minHeight: 54, borderRadius: radius.md, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, flexDirection: "row", gap: 9 },
-  primaryButtonText: { fontSize: 15, fontWeight: "700", letterSpacing: 0.1 },
-  quietButton: { minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
-  sectionHeader: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  sectionTitle: { fontSize: 19, fontWeight: "700", letterSpacing: -0.35 },
-  sectionAction: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 },
+  primaryButtonText: { flexShrink: 1, fontSize: 15, fontWeight: "600", textAlign: "center" },
+  quietButton: { minHeight: 48, minWidth: 48, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
+  sectionHeader: { minHeight: 48, flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: "600", letterSpacing: -0.25, flexShrink: 1 },
+  sectionAction: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 4 },
   sectionActionText: { fontSize: 13, fontWeight: "700" },
   emptyCard: { borderWidth: 1, borderRadius: radius.lg, padding: 24, alignItems: "center" },
   emptyEmbedded: { paddingHorizontal: 24, paddingVertical: 30, alignItems: "center" },
